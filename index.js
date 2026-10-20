@@ -856,10 +856,71 @@ function askOnceForSession(ctx, config, leadAgent, childId) {
 
 /* ── HTTP 路由（给设置页） ─────────────────────────────────────────────── */
 
-/** 可选的模型路由目录：provider → models。读不到就返回空表，界面提示即可。 */
+/* ── 模型档位元数据（给设置页的档位下拉） ───────────────────────────────── */
+
+/**
+ * 档位缓存的存活时间。`/state` 被设置面板反复拉取，而下面每次解析都要问一遍适配器，
+ * 不做缓存等于把 43 个模型的解析成本摊到每一次拉取上。
+ */
+const REASONING_CACHE_TTL_MS = 60000;
+
+/** `provider\0model` → `{ at, value }`。成功的解析才缓存，失败按值缓存 `null`。 */
+const reasoningCache = new Map();
+
+function pruneReasoningCache(now) {
+  for (const [key, entry] of reasoningCache) {
+    if (now - entry.at >= REASONING_CACHE_TTL_MS) reasoningCache.delete(key);
+  }
+}
+
+/**
+ * 把 `LlmModelReasoningInfo` 投影成界面用的形状。
+ *
+ * 权威形状见 `dsh-llm` 的 `lib/types/types.d.ts`：
+ * `{ efforts: readonly { id, name, description? }[], defaultEffort? }` ——
+ * `normalizeModelInfo()` 保证 `efforts` 非空、`defaultEffort` 一定在 `efforts` 里。
+ * `undefined`（模型不声明档位）= 界面上的 `reasoning: null`。
+ */
+function projectReasoning(reasoning) {
+  if (reasoning === undefined || reasoning === null) return null;
+  const efforts = Array.isArray(reasoning.efforts) ? reasoning.efforts : [];
+  return {
+    defaultEffort: typeof reasoning.defaultEffort === 'string' ? reasoning.defaultEffort : null,
+    efforts: efforts.map((effort) => ({ id: effort.id, name: effort.name })),
+  };
+}
+
+/**
+ * 一次解析一个模型的档位元数据，带缓存。
+ *
+ * 为什么必须单独解析：`listModels()` 返回的是 `LlmModelInfo`，**没有** `reasoning`
+ * 字段；档位只在 `resolveModelInfo()` 的 `LlmResolvedModelInfo` 里。官方
+ * `buildModelCatalog()`（`dsh-api-session-controller`）也是同样逐模型补一次。
+ *
+ * 任何异常都降级成 `null`（= 不声明档位）：一个模型的适配器拒绝，不该让整个
+ * `/state` 500、把设置页整块打死。
+ */
+async function reasoningOf(llm, provider, model) {
+  const key = `${provider}\u0000${model}`;
+  const now = Date.now();
+  const hit = reasoningCache.get(key);
+  if (hit !== undefined && now - hit.at < REASONING_CACHE_TTL_MS) return hit.value;
+  let value = null;
+  try {
+    const info = await llm.resolveModelInfo(provider, model);
+    value = projectReasoning(info?.reasoning);
+  } catch {
+    value = null;
+  }
+  reasoningCache.set(key, { at: now, value });
+  return value;
+}
+
+/** 可选的模型路由目录：provider → models（每个模型带档位元数据）。读不到就返回空表。 */
 async function describeRoutes(ctx) {
   const llm = ctx.get('llm');
   if (llm === undefined) return [];
+  pruneReasoningCache(Date.now());
   const out = [];
   for (const provider of llm.listProviders()) {
     let models = [];
@@ -871,7 +932,14 @@ async function describeRoutes(ctx) {
     out.push({
       provider: provider.id,
       name: provider.name,
-      models: models.map((model) => ({ id: model.id, name: model.name })),
+      // 同一 provider 内并发解析，provider 之间仍串行 —— 与官方 buildModelCatalog 一致。
+      models: await Promise.all(
+        models.map(async (model) => ({
+          id: model.id,
+          name: model.name,
+          reasoning: await reasoningOf(llm, provider.id, model.id),
+        })),
+      ),
     });
   }
   return out;
