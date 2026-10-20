@@ -590,9 +590,20 @@ async function spawnChild(ctx, registry, request) {
     const teams = ctx.get('agentTeams');
     if (teams === undefined) throw new Error('当前 profile 没有挂载智能体团队服务（agentTeams）');
     // 先落点名表，再 spawn：agent/created 钩子读的就是它。
+    // 写盘只动 `members` 一个键，其余键取**原始文件**（`readJsonFile`），与
+    // `/rules`、`/member`、`/bulk`、`/session` 同一写法。两个理由：
+    // 1. `effectiveSettings()` 是归一化视图，拿它整体覆写会抹掉未识别的键；
+    // 2. 它把 patch 值也拼进来了 —— 而「文件优先于 patch」（`effectiveSettings`
+    //    里每个字段都是 `file.x !== undefined ? file.x : patch.x`）。所以一旦
+    //    spawn 过队友，patch 里之后对 `defaultRoute` / `rules` / `maxDepth`
+    //    的修改会被文件里的旧快照永久盖住。
+    // 例外是 `members` 本身：它的语义是**整表替换**（不是逐项合并），所以
+    // 基座必须用 `settings.members`（已含 patch 层），否则写回后文件里的表
+    // 会把 patch 里的成员整表挤掉。
+    const current = readJsonFile(rulesPath()) ?? {};
     const settings = effectiveSettings(request.config);
     writeJsonFile(rulesPath(), {
-      ...settings,
+      ...current,
       members: {
         ...settings.members,
         [request.name]: { ...request.route, ...(request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort }) },
@@ -977,21 +988,35 @@ export function apply(ctx, config) {
           // 「新值是不是 undefined」。否则 `defaultRoute: null`（用户取消勾选）
           // 会被 `??` 当成缺失，旧路由又活回来 —— 设置页怎么点都清不掉。
           const current = effectiveSettings(config);
+          /* ⚠️ 原始文件必须另读一次：`effectiveSettings` 是**归一化**结果，不是磁盘形态。
+             它不带 `sessions` / `asked` 的原样语义（`asked` 的值是时间戳，归一化后仍是
+             字符串，但键的存在性只由文件决定），也不含 `askOnFirst` 之外的未知键。
+             以前这里写 `writeJsonFile(rulesPath(), merged)` 整体覆写，把 `sessions`
+             （本对话默认）、`asked`（已问标记）、`askOnFirst` 一起清掉 —— 用户每次点
+             保存设置，下次派活又被重新询问一次。
+             `/member`、`/bulk`、`/session` 三条路径走的都是「读原始文件 → 改一个键
+             → 写回」，这里对齐它们。 */
+          const raw = readJsonFile(rulesPath()) ?? {};
+          const nextMaxDepth = asMaxDepth(body.maxDepth);
           const merged = {
             enabled: 'enabled' in body && typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
             rules: 'rules' in body ? normalizeRules(body.rules) : current.rules,
             members: 'members' in body ? normalizeMembers(body.members) : current.members,
             defaultRoute: 'defaultRoute' in body ? (asRoute(body.defaultRoute) ?? null) : (current.defaultRoute ?? null),
-            maxDepth: 'maxDepth' in body && Number.isSafeInteger(body.maxDepth) ? body.maxDepth : current.maxDepth,
+            // 下界校验：负数（例如手填 -1）会跳过全部子代，按非法值丢弃，保留当前值。
+            maxDepth: 'maxDepth' in body && nextMaxDepth !== undefined ? nextMaxDepth : current.maxDepth,
             applyToFork:
               'applyToFork' in body && typeof body.applyToFork === 'boolean' ? body.applyToFork : current.applyToFork,
+            askOnFirst:
+              'askOnFirst' in body && typeof body.askOnFirst === 'boolean' ? body.askOnFirst : current.askOnFirst,
           };
           try {
-            writeJsonFile(rulesPath(), merged);
+            // 只覆盖这 7 个键，其余（sessions / asked / 未来新增键）原样保留。
+            writeJsonFile(rulesPath(), { ...raw, ...merged });
           } catch (error) {
             return json({ ok: false, error: `写入失败：${String(error)}` }, 500);
           }
-          return json({ ok: true, settings: effectiveSettings(config) });
+          return json({ ok: true, settings: effectiveSettings(config), lastErrors: recentRouteErrors() });
         },
       });
 
