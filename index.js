@@ -1138,7 +1138,14 @@ export function apply(ctx, config) {
           }
 
           // 2) 校验路由：不可用的组合就地拒绝，别写进磁盘再让孩子炸。
+          //    `route: null` 是「清掉点名」的显式语义；传了一个**形状不对**的对象
+          //    （例如 `{provider:'x'}` 缺 model）不是「清空」，必须报 400 ——
+          //    否则会静默走进下面的 delete 分支，把点名表里的条目悄悄删掉。
+          //    守卫方式与 `/bulk` 一致。
           const route = body.route === null ? undefined : asRoute(body.route);
+          if (body.route !== null && route === undefined) {
+            return json({ ok: false, error: '需要 provider 和 model' }, 400);
+          }
           let effort;
           if (route !== undefined) {
             try {
