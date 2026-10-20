@@ -389,15 +389,60 @@ window.__ModuleLoader__.load({
       return out;
     }
 
-    /** `settings.members` 里被点过名的成员（用于「恢复继承」）。 */
-    function readFixedMembers(raw) {
+    /**
+     * `settings.members`（点名表）的**全部键**，含已经结束、列表里看不见的成员。
+     *
+     * 只读成员列表清不掉这些残留：子智能体一结束就从列表里消失，而点名表里的键
+     * 还在，于是历史残留越堆越多。所以管理区必须直接读这张表，而不是读成员列表。
+     * 值不是合法路由时仍保留这一条（`valid: false`），否则坏数据永远删不掉。
+     */
+    function readFixedEntries(raw) {
       if (!isObject(raw)) return [];
-      const names = [];
+      const out = [];
       for (const key of Object.keys(raw)) {
-        if (key.trim() === '') continue;
-        if (readRoute(raw[key]) !== null) names.push(key);
+        const name = key.trim();
+        if (name === '') continue;
+        const route = readRoute(raw[key]);
+        out.push({
+          key: name,
+          valid: route !== null,
+          provider: route === null ? '' : route.provider,
+          model: route === null ? '' : route.model,
+          reasoningEffort: route === null ? '' : route.reasoningEffort,
+        });
       }
-      return names;
+      return out;
+    }
+
+    /**
+     * 最近换路由失败（`lastErrors`）：`[{ time, childId, route, reason }]`，最新在前。
+     *
+     * 只在 `/state`、`/members`（以及保存后的 `/rules`）里下发，最多 10 条。这里只做
+     * 形状归一化：`reason` 空的丢掉（没有原因可念的条目对用户没意义），`time` 非数字
+     * 给 0，顺序原样保留（宿主已经是最新在前，排序交给它，前端不重排）。
+     */
+    function readErrors(raw) {
+      if (!Array.isArray(raw)) return [];
+      const out = [];
+      for (const item of raw) {
+        if (!isObject(item)) continue;
+        const reason = textOf(item.reason);
+        if (reason === '') continue;
+        out.push({
+          time: typeof item.time === 'number' && Number.isFinite(item.time) ? item.time : 0,
+          childId: textOf(item.childId),
+          route: textOf(item.route),
+          reason,
+        });
+      }
+      return out;
+    }
+
+    /** 短 id：子智能体没有名字，用前 8 位指代，比整串会话 id 好认。 */
+    function shortId(id) {
+      const value = textOf(id);
+      if (value.length <= 8) return value;
+      return value.slice(0, 8) + '…';
     }
 
     /** 行键：优先子会话 id；没有 id 时退回名字。 */
@@ -1274,11 +1319,44 @@ window.__ModuleLoader__.load({
       '.cmp-bulkWarn{color:var(--dsw-alias-state-warn-label)}',
       '.cmp-bulkErr{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
       '.cmp-bulkNote{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      /* 失败红条：容器沿用 .cmp-bulk/.cmp-create 那套（border-l1 + layer-1），
+         语义只靠 .cmp-noticeErr 的红字表达，不引入新的视觉语言。 */
+      '.cmp-errorBar{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
+      '.cmp-errorRow{display:flex;align-items:flex-start;gap:8px;min-width:0}',
+      '.cmp-errorText{flex:1 1 auto;min-width:0;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
+      '.cmp-errorList{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;min-width:0}',
+      '.cmp-errorItem{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
+      '.cmp-errorTime{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}',
+      '.cmp-errorBarBtn{flex:none;height:22px;padding:0 6px;font-size:11px;line-height:20px}',
       /* 「本对话默认」块：标题行（标签 + 说明）+ 一个下拉，和批量条同一层级。 */
       '.cmp-sessionBlock{display:flex;flex-direction:column;gap:6px;min-width:0}',
       '.cmp-sessionHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}',
       '.cmp-sessionLabel{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}',
       '.cmp-sessionBlock .mds{width:100%;min-width:0;align-self:stretch}',
+
+      /* ── 点名表管理（面板最底部的折叠块） ─────────────────────────────── */
+      '.cmp-pins{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
+      '.cmp-pinHead{display:flex;align-items:center;gap:8px;min-width:0}',
+      '.cmp-pinHead .cmp-createHead{flex:1 1 auto;min-width:0}',
+      '.cmp-pinRow{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 0}',
+      '.cmp-pinKey{flex:1 1 auto;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.cmp-pinStale{color:var(--dsw-alias-state-warn-label)}',
+      '.cmp-pinModel{flex:0 1 52%;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}',
+      '.cmp-pinBtn{flex:none;height:26px;padding:0 8px;font-size:12px}',
+
+      /* ── 跨面板 toast（挂 framework 的 shell.overlay） ─────────────────── */
+      /* shell.overlay 的图层本身是 pointer-events:none（点得穿），容器必须保持 none，
+         只有每条 toast 自己开 auto，否则一整层会挡住下面的界面。 */
+      '.cmt-layer{position:fixed;top:12px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 32px));pointer-events:none}',
+      '.cmt-toast{box-sizing:border-box;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);box-shadow:0 8px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;pointer-events:auto}',
+      '.cmt-toastOk{border-color:var(--dsw-alias-state-success-primary)}',
+      '.cmt-toastErr{border-color:var(--dsw-alias-state-error-primary)}',
+      '.cmt-text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}',
+      '.cmt-toastOk .cmt-text{color:var(--dsw-alias-state-success-primary)}',
+      '.cmt-toastErr .cmt-text{color:var(--dsw-alias-state-error-primary)}',
+      '.cmt-close{box-sizing:border-box;flex:none;width:18px;height:18px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:16px;cursor:pointer;pointer-events:auto}',
+      '.cmt-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      '.cmt-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
 
       /* ── ModelSelect：自绘下拉（触发器 + 固定定位弹层） ───────────────── */
       /* `align-self:flex-start` + `flex:none` 是关键：父级是纵向 flex，
@@ -2033,7 +2111,17 @@ window.__ModuleLoader__.load({
       const [loadError, setLoadError] = React.useState('');
       const [members, setMembers] = React.useState([]);
       const [routes, setRoutes] = React.useState([]);
-      const [fixed, setFixed] = React.useState([]);
+      /* 点名表：存的是 `settings.members` 的**全部键**（含已结束成员），不是成员列表。
+         成员列表里看不见的残留只能从这里清，否则永远删不掉。 */
+      const [fixedRows, setFixedRows] = React.useState([]);
+      const [pinsOpen, setPinsOpen] = React.useState(false);
+      const [pinsBusy, setPinsBusy] = React.useState('');
+      const [pinsConfirm, setPinsConfirm] = React.useState(false);
+      /* 最近换路由失败（宿主在 `/state`、`/members`、`/rules` 下发）。只读展示，不回写。 */
+      const [lastErrors, setLastErrors] = React.useState([]);
+      const [errorsOpen, setErrorsOpen] = React.useState(false);
+      /* 关掉红条时记住当时最新一条的时间：只有**更新的**失败才把它顶回来。 */
+      const [errorsHiddenAt, setErrorsHiddenAt] = React.useState(0);
       // 「本对话默认」：首次创建时回答的那条；null = 没设（继承主 Agent）。
       const [sessionDefault, setSessionDefault] = React.useState(null);
       const [expanded, setExpanded] = React.useState('');
@@ -2087,9 +2175,10 @@ window.__ModuleLoader__.load({
             const routeList = readRoutes(payload.routes);
             setMembers(readMemberList(payload.members));
             setRoutes(routeList);
-            setFixed(
-              readFixedMembers(isObject(payload.settings) ? payload.settings.members : undefined),
+            setFixedRows(
+              readFixedEntries(isObject(payload.settings) ? payload.settings.members : undefined),
             );
+            setLastErrors(readErrors(payload.lastErrors));
             // 「本对话默认」：首次创建时回答的那个选择，这里回读以便显示/清除。
             const sessionRoute = isObject(payload.settings) ? payload.settings.sessionRoute : undefined;
             const route = isObject(sessionRoute) ? sessionRoute : null;
@@ -2254,7 +2343,12 @@ window.__ModuleLoader__.load({
 
       function applyPayload(payload, target, route) {
         if (isObject(payload) && isObject(payload.settings)) {
-          setFixed(readFixedMembers(payload.settings.members));
+          setFixedRows(readFixedEntries(payload.settings.members));
+        }
+        /* 失败榜跟着每次回包刷新：换模型失败的那一下，红条要立刻出现，
+           不能等用户关掉再打开面板。响应没带这个字段时保持原样（老宿主）。 */
+        if (isObject(payload) && Array.isArray(payload.lastErrors)) {
+          setLastErrors(readErrors(payload.lastErrors));
         }
         if (isObject(payload) && Array.isArray(payload.members)) {
           setMembers(readMemberList(payload.members));
@@ -2420,6 +2514,90 @@ window.__ModuleLoader__.load({
         setNotice({
           kind: 'ok',
           text: applied.length === 0 ? '已恢复继承，下次唤醒该成员时生效（不需要重启）' : '已恢复继承',
+        });
+        pushToast('ok', member.name + ' 已恢复继承');
+      }
+
+      /* ── 点名表管理：清掉已经结束的成员留下的残留 ─────────────────────── */
+
+      /**
+       * 清掉点名表里的某一个键。
+       *
+       * 键原样当 `name` 发给 `/member`（宿主对 `name` 不做形状校验、直接当键用），
+       * 于是队友名、`#<childId>`、以及任何历史残留都能用同一条路径删掉。
+       * 不用新增端点，也不区分这个成员现在还在不在。
+       */
+      async function clearPinned(key) {
+        if (pinsBusy !== '' || busy !== '' || key === '') return;
+        setPinsBusy(key);
+        const response = await request(MEMBER_SET_PATH, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: key, route: null, lead }),
+        });
+        setPinsBusy('');
+        const payload = response.data;
+        if (!(response.ok && isObject(payload) && payload.ok === true)) {
+          const detail = isObject(payload) ? textOf(payload.error) : '';
+          const text = detail === '' ? '恢复失败（HTTP ' + String(response.status) + '）' : detail;
+          setNotice({ kind: 'error', text });
+          pushToast('error', '点名表清理失败（' + key + '）：' + text);
+          return;
+        }
+        if (isObject(payload.settings) && isObject(payload.settings.members)) {
+          setFixedRows(readFixedEntries(payload.settings.members));
+        } else {
+          // 响应没带点名表时至少把这一行抹掉，界面不能停在旧值上。
+          setFixedRows((current) => current.filter((row) => row.key !== key));
+        }
+        if (Array.isArray(payload.members)) setMembers(readMemberList(payload.members));
+        setNotice({ kind: 'ok', text: '已恢复继承：' + key });
+        pushToast('ok', '已恢复继承：' + key);
+      }
+
+      /** 清空整张点名表：逐条 `route: null`，串行发（宿主每次都要落盘）。 */
+      async function clearAllPinned() {
+        if (pinsBusy !== '' || busy !== '') return;
+        const keys = fixedRows.map((row) => row.key);
+        setPinsConfirm(false);
+        if (keys.length === 0) return;
+        setPinsBusy('*');
+        setNotice(null);
+        let removed = 0;
+        let failedCount = 0;
+        let lastMembers = null;
+        let lastSettings = null;
+        for (const key of keys) {
+          const response = await request(MEMBER_SET_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: key, route: null, lead }),
+          });
+          const payload = response.data;
+          if (!(response.ok && isObject(payload) && payload.ok === true)) {
+            failedCount += 1;
+            continue;
+          }
+          removed += 1;
+          if (Array.isArray(payload.members)) lastMembers = payload.members;
+          if (isObject(payload.settings) && isObject(payload.settings.members)) {
+            lastSettings = payload.settings.members;
+          }
+        }
+        setPinsBusy('');
+        if (lastSettings !== null) setFixedRows(readFixedEntries(lastSettings));
+        if (lastMembers !== null) {
+          setMembers(readMemberList(lastMembers));
+          setPhase('ready');
+        } else {
+          setReloadTick((tick) => tick + 1);
+        }
+        setNotice({
+          kind: failedCount === 0 ? 'ok' : 'error',
+          text:
+            failedCount === 0
+              ? '已清空 ' + String(removed) + ' 条点名'
+              : '清掉 ' + String(removed) + ' 条，' + String(failedCount) + ' 条失败',
         });
       }
 
@@ -3016,6 +3194,141 @@ window.__ModuleLoader__.load({
         );
       }
 
+      /**
+       * 点名表管理。
+       *
+       * 这是唯一能清掉「已经结束的成员」的地方：`members` 列表只列当前会话里还看得见
+       * 的成员，子智能体一结束就消失，但点名表里的键还在，于是越堆越多。所以这里读的是
+       * `settings.members` 的**全部键**，不是成员列表。
+       *
+       * 视觉上复用「新建队友」那套折叠头（cmp-createHead + caretIcon），同一块面板里
+       * 的两个折叠区长得一样，不用再记一套样式。
+       */
+      function renderPins() {
+        const count = fixedRows.length;
+        const busyAny = pinsBusy !== '';
+        const rows = fixedRows.map((row) => {
+          const effortText = textOf(row.reasoningEffort);
+          const modelText = row.valid
+            ? row.provider + '/' + row.model + (effortText === '' ? '' : ' · ' + effortText)
+            : '值不是合法路由';
+          return h(
+            'div',
+            { className: 'cmp-pinRow', key: 'pin:' + row.key },
+            h(
+              'span',
+              {
+                className: row.valid ? 'cmp-pinKey' : 'cmp-pinKey cmp-pinStale',
+                title: row.key,
+              },
+              row.key,
+            ),
+            h(
+              'span',
+              {
+                className: row.valid ? 'cmp-pinModel' : 'cmp-pinModel cmp-modelNone',
+                title: modelText,
+              },
+              modelText,
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cmp-btn cmp-pinBtn',
+                disabled: busyAny || busy !== '',
+                onClick: () => {
+                  void clearPinned(row.key);
+                },
+              },
+              pinsBusy === row.key ? '恢复中…' : '恢复继承',
+            ),
+          );
+        });
+
+        return h(
+          'div',
+          { className: 'cmp-pins' },
+          h(
+            'div',
+            { className: 'cmp-pinHead' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cmp-createHead',
+                'aria-expanded': pinsOpen,
+                onClick: () => {
+                  setPinsConfirm(false);
+                  setPinsOpen(!pinsOpen);
+                },
+              },
+              caretIcon(pinsOpen),
+              h('span', null, '点名表（' + String(count) + ' 条）'),
+            ),
+            pinsOpen && count > 0
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'cmp-btn cmp-pinBtn',
+                    disabled: busyAny || busy !== '',
+                    onClick: () => setPinsConfirm(true),
+                  },
+                  pinsBusy === '*' ? '清空中…' : '全部清空',
+                )
+              : null,
+          ),
+          pinsOpen
+            ? h(
+                'div',
+                { className: 'cmp-createBody' },
+                h(
+                  'p',
+                  { className: 'cmp-guide' },
+                  '这里列的是点名表里的全部键，含已经结束、列表里看不见的成员。恢复继承会把它从这个表里删掉。',
+                ),
+                pinsConfirm
+                  ? h(
+                      'div',
+                      { className: 'cmp-bulkRow' },
+                      h(
+                        'span',
+                        { className: 'cmp-bulkResult cmp-bulkWarn' },
+                        '将清空全部 ' + String(count) + ' 条点名，这些成员之后都会跟随规则或继承主 Agent。',
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'cmp-btn cmp-btnPrimary',
+                          disabled: busyAny || busy !== '',
+                          onClick: () => {
+                            void clearAllPinned();
+                          },
+                        },
+                        '确认清空',
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'cmp-btn',
+                          disabled: busyAny || busy !== '',
+                          onClick: () => setPinsConfirm(false),
+                        },
+                        '取消',
+                      ),
+                    )
+                  : null,
+                count === 0
+                  ? h('div', { className: 'cmp-empty' }, '点名表是空的，所有成员都按规则或继承走。')
+                  : h('div', { className: 'cmp-list' }, rows),
+              )
+            : null,
+        );
+      }
+
       function renderEditor(member, key) {
         return h(
           'div',
@@ -3077,7 +3390,7 @@ window.__ModuleLoader__.load({
               },
               busy === key ? '应用中…' : '应用',
             ),
-            member.isMember && fixed.indexOf(member.name) >= 0
+            member.isMember && fixedNames.indexOf(member.name) >= 0
               ? h(
                   'button',
                   {
@@ -3293,9 +3606,14 @@ window.__ModuleLoader__.load({
                 : null,
               // 批量条常驻：一眼可见，不折叠。数据没读出来时先不画（没有 routes 无可选）。
               phase === 'ready' ? renderBulkBar() : null,
+              // 失败红条紧贴批量条下方、成员列表上方：换模型失败的原因要跟操作挨在一起。
+              // 没有失败时 renderErrorBar() 返回 null，整块不占位。
+              phase === 'ready' ? renderErrorBar() : null,
               // 新建区只在数据读出来之后给：没路由时它必然提交失败，不如先让用户看警告。
               phase === 'ready' ? renderCreateForm() : null,
               body,
+              // 点名表管理放最底下：它是清理用的，不该抢常用操作的视线。
+              phase === 'ready' ? renderPins() : null,
             )
           : null,
       );
