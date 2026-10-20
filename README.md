@@ -1,8 +1,8 @@
 <div align="center">
 
-# dsh-model-roster
+# dsh-switchboard
 
-**让 DeepSeek Harness 里的每个子智能体和队友，跑在各自的模型上**
+**给 DeepSeek Harness 的每个子智能体和队友，接通各自的模型**
 
 主 Agent 用一个模型，派出去的活换一个：贵的活给强模型，琐碎的活给便宜的
 
@@ -24,7 +24,7 @@
 | `spawn_teammate` | 无 | 队友一律继承主 Agent 的路由 |
 | `subagent` | 有 | 每次调用手写参数，且要过白名单 |
 
-这个插件把它变成名册：一个对话里的成员都在册上，每人一个模型，点一下就改。
+这个插件把它变成一块接线板：一个对话里的成员都在板上，每人接一条线路，点一下就换。
 
 ## 能力
 
@@ -48,7 +48,7 @@ dsh plugin --profile web add "<本插件目录>"
 
 ## 配置
 
-配置写在 `$DSH_HOME/storages/dsh-model-roster/rules.json`，保存即时生效。
+配置写在 `$DSH_HOME/storages/dsh-switchboard/rules.json`，保存即时生效。
 
 ```jsonc
 {

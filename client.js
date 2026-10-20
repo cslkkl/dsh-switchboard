@@ -1,15 +1,15 @@
 /**
- * dsh-model-roster —— 浏览器半边。
+ * dsh-switchboard —— 浏览器半边。
  *
  * 两个入口，互不影响：
  *
  *  A. 对话头部的「模型」按钮（`conversation.session.header.actions`）
  *     点开列出当前 Lead 会话下的队友与子智能体，点某一行就地选 provider/model，
- *     POST `/api/v1/model-roster/member` 后**立刻**作用到存活的子 Agent 上；
+ *     POST `/api/v1/switchboard/member` 后**立刻**作用到存活的子 Agent 上；
  *     已经结束的成员写进点名表，下次 spawn 生效。
  *
  *  B. 插件管理页的设置卡片（`plugins.bundle.config`）
- *     1. 读 `/api/v1/model-roster/state` 拿当前有效设置与可用模型路由；
+ *     1. 读 `/api/v1/switchboard/state` 拿当前有效设置与可用模型路由；
  *     2. 把规则、默认路由、委派范围画成一张卡片，改完 POST `/rules` 并回填；
  *     3. 显示 `/recent` 的最近委派（端点缺失就整块不画）。
  *
@@ -23,7 +23,7 @@
  * 本文件是纯 CJS bundle，由 `window.__ModuleLoader__.load` 包装。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-model-roster',
+  id: 'dsh-switchboard',
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
@@ -32,20 +32,20 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     const SLOT_NAME = 'plugins.bundle.config';
-    const SLOT_KEY = 'dsh-model-roster';
+    const SLOT_KEY = 'dsh-switchboard';
 
     /** 对话头部操作区的插槽：这里是「点成员换模型」的主入口。 */
     const HEADER_SLOT = 'conversation.session.header.actions';
-    const PICKER_ID = 'model-roster-picker';
+    const PICKER_ID = 'switchboard-picker';
 
-    const STATE_PATH = '/api/v1/model-roster/state';
-    const RULES_PATH = '/api/v1/model-roster/rules';
-    const RECENT_PATH = '/api/v1/model-roster/recent';
-    const MEMBERS_PATH = '/api/v1/model-roster/members';
-    const MEMBER_SET_PATH = '/api/v1/model-roster/member';
-    const SESSION_PATH = '/api/v1/model-roster/session';
-    const SPAWN_PATH = '/api/v1/model-roster/spawn';
-    const BULK_PATH = '/api/v1/model-roster/bulk';
+    const STATE_PATH = '/api/v1/switchboard/state';
+    const RULES_PATH = '/api/v1/switchboard/rules';
+    const RECENT_PATH = '/api/v1/switchboard/recent';
+    const MEMBERS_PATH = '/api/v1/switchboard/members';
+    const MEMBER_SET_PATH = '/api/v1/switchboard/member';
+    const SESSION_PATH = '/api/v1/switchboard/session';
+    const SPAWN_PATH = '/api/v1/switchboard/spawn';
+    const BULK_PATH = '/api/v1/switchboard/bulk';
 
     /** 队友名的合法形状，和宿主侧同一条正则（lower-kebab-case）。 */
     const TEAMMATE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -1211,7 +1211,7 @@ window.__ModuleLoader__.load({
       componentDidCatch(error) {
         try {
           if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-            console.warn('[dsh-model-roster] 设置卡片渲染失败：', error);
+            console.warn('[dsh-switchboard] 设置卡片渲染失败：', error);
           }
         } catch {
           /* 日志失败也不许再抛 */

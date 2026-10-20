@@ -8,7 +8,7 @@
 
 - 作用：用浏览器会话密钥自签 cookie，直接请求宿主 HTTP 端点。
 - 用法：`node tools/probe-http.mjs <GET|POST> <路径> ['<JSON>']`
-- 例：`node tools/probe-http.mjs GET /api/v1/model-roster/state`
+- 例：`node tools/probe-http.mjs GET /api/v1/switchboard/state`
 - 密钥来源：`$DSH_HOME/.credentials.yaml`；只在本进程内使用，不打印、不落盘。
 - 超时：默认 60 秒，可用 `PROBE_TIMEOUT_MS` 调整。
 - 依赖：无。被依赖：人工自测；根 [AGENTS.md](../AGENTS.md) 常用命令引用它。
