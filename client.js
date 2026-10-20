@@ -452,6 +452,134 @@ window.__ModuleLoader__.load({
       return member.childId === '' ? 'name:' + member.name : 'id:' + member.childId;
     }
 
+    /* ── 跨面板 toast：模块级小队列，两个半屏共用 ─────────────────────────── */
+
+    const toastQueue = { items: [], seq: 0, listeners: new Set() };
+    const toastTimers = new Set();
+
+    function notifyToasts() {
+      for (const listener of toastQueue.listeners) {
+        try {
+          listener();
+        } catch {
+          /* 某个订阅者崩了不许影响其它订阅者，也不许把发提示的那条链路带崩 */
+        }
+      }
+    }
+
+    function dismissToast(id) {
+      const next = toastQueue.items.filter((item) => item.id !== id);
+      if (next.length === toastQueue.items.length) return;
+      toastQueue.items = next;
+      notifyToasts();
+    }
+
+    /**
+     * 入栈一条操作结果。
+     *
+     * 三条纪律：
+     *  - 只收「操作结果」，不收预览/浏览（规则试算就不该走这里）；
+     *  - 同时最多 3 条，超出丢最旧的；
+     *  - 同文案 1.5 秒内不重复入栈（连点两下保存不该叠两层）。
+     * 成功 3 秒自动消失，失败留着等用户关。
+     */
+    function pushToast(kind, text) {
+      const message = textOf(text);
+      if (message === '') return;
+      const now = Date.now();
+      for (const item of toastQueue.items) {
+        if (item.text === message && now - item.at < TOAST_DEDUPE_MS) return;
+      }
+      toastQueue.seq += 1;
+      const item = {
+        id: toastQueue.seq,
+        kind: kind === 'error' ? 'error' : 'ok',
+        text: message,
+        at: now,
+      };
+      toastQueue.items = toastQueue.items.concat(item).slice(-TOAST_LIMIT);
+      notifyToasts();
+      if (item.kind === 'ok') {
+        const timer = setTimeout(() => {
+          toastTimers.delete(timer);
+          dismissToast(item.id);
+        }, TOAST_OK_MS);
+        toastTimers.add(timer);
+      }
+    }
+
+    /** 卸载时清干净：定时器 + 队列 + 订阅者。 */
+    function disposeToasts() {
+      for (const timer of toastTimers) clearTimeout(timer);
+      toastTimers.clear();
+      toastQueue.items = [];
+      toastQueue.listeners.clear();
+    }
+
+    function useToasts() {
+      const [items, setItems] = React.useState(() => toastQueue.items);
+      React.useEffect(() => {
+        const listener = () => setItems(toastQueue.items.slice());
+        toastQueue.listeners.add(listener);
+        // 订阅前可能已经有条目，补一次，否则这一层会一直空着。
+        listener();
+        return () => {
+          toastQueue.listeners.delete(listener);
+        };
+      }, []);
+      return items;
+    }
+
+    /* ── 最近使用过的模型（localStorage，失败一律静默） ──────────────────── */
+
+    let recentCache = null;
+
+    function readRecentModels() {
+      if (recentCache !== null) return recentCache;
+      const out = [];
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(RECENT_KEY);
+          const parsed = raw === null ? null : JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const item of parsed) {
+              if (typeof item !== 'string') continue;
+              const at = item.indexOf(RECENT_SEP);
+              if (at <= 0) continue;
+              const provider = item.slice(0, at);
+              const model = item.slice(at + 1);
+              if (provider === '' || model === '') continue;
+              out.push({ provider, model });
+            }
+          }
+        }
+      } catch {
+        /* 隐私模式/坏 JSON：当成没有最近记录，不抛 */
+      }
+      recentCache = out.slice(0, RECENT_LIMIT);
+      return recentCache;
+    }
+
+    /**
+     * 记一次「真的选用了」的模型（提交成功后才调，浏览/搜索/试算都不算）。
+     * 同一模型再次选用提到最前；总数不超过 RECENT_LIMIT。
+     */
+    function rememberRecentModel(provider, model) {
+      const p = textOf(provider);
+      const m = textOf(model);
+      if (p === '' || m === '') return;
+      const key = p + RECENT_SEP + m;
+      try {
+        if (typeof localStorage === 'undefined') return;
+        const previous = readRecentModels().map((item) => item.provider + RECENT_SEP + item.model);
+        const next = [key].concat(previous.filter((item) => item !== key)).slice(0, RECENT_LIMIT);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+        recentCache = null;
+      } catch {
+        /* 配额满或被禁：记不住不影响换模型 */
+      }
+    }
+
     /* 下拉选项：宿主的路由目录是唯一数据源。
      *
      * 返回结构化数据（不再是 `<option>` 节点）：label 是给人看的渠道名/模型名，
@@ -2231,6 +2359,48 @@ window.__ModuleLoader__.load({
       return h(ErrorBoundary, null, h(Body, null));
     }
 
+    /* ── toast 层：注册进框架的 shell.overlay，关掉面板也还在 ─────────────── */
+
+    /**
+     * 只画「操作结果」，空队列时返回 null（不占位、不挂空壳）。
+     *
+     * 定位与点击穿透都由 CSS 负责：`.cmt-layer` 是 pointer-events:none，
+     * 每条 `.cmt-toast` 自己开 auto —— `shell.overlay` 那层是点得穿的，
+     * 谁想接点击谁自己开。
+     */
+    function ToastLayer() {
+      const items = useToasts();
+      if (items.length === 0) return null;
+      return h(
+        'div',
+        { className: 'cmt-layer' },
+        styleTag(),
+        items.map((item) =>
+          h(
+            'div',
+            {
+              className: item.kind === 'error' ? 'cmt-toast cmt-toastErr' : 'cmt-toast cmt-toastOk',
+              key: 'toast:' + String(item.id),
+              role: 'status',
+              'aria-live': item.kind === 'error' ? 'assertive' : 'polite',
+            },
+            h('span', { className: 'cmt-text' }, item.text),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cmt-close',
+                'aria-label': '关闭这条提示',
+                title: '关闭',
+                onClick: () => dismissToast(item.id),
+              },
+              '×',
+            ),
+          ),
+        ),
+      );
+    }
+
     /* ── 对话头部：点成员换模型 ───────────────────────────────────────────── */
 
     /**
@@ -2555,19 +2725,27 @@ window.__ModuleLoader__.load({
         const payload = response.data;
         if (!(response.ok && isObject(payload) && payload.ok === true)) {
           const detail = isObject(payload) ? textOf(payload.error) : '';
-          setNotice({
-            kind: 'error',
-            text: detail === '' ? '应用失败（HTTP ' + String(response.status) + '）' : detail,
-          });
+          const text = detail === '' ? '应用失败（HTTP ' + String(response.status) + '）' : detail;
+          setNotice({ kind: 'error', text });
+          pushToast('error', '换模型失败：' + text);
           return;
         }
         applyPayload(payload, member, route);
         const applied = Array.isArray(payload.applied) ? payload.applied : [];
         setExpanded('');
+        const who = member.name === '' ? '子智能体' : member.name;
+        const target = provider + '/' + model;
         setNotice({
           kind: 'ok',
           text: applied.length === 0 ? '已保存，下次唤醒该成员时生效（不需要重启）' : '已生效',
         });
+        rememberRecentModel(provider, model);
+        pushToast(
+          'ok',
+          applied.length === 0
+            ? who + ' 已记为 ' + target + '，下次唤醒时生效'
+            : who + ' 已换成 ' + target,
+        );
       }
 
       /* ── 本对话默认：一次选好，这个对话里派活都按它，不再询问 ─────────── */
@@ -2659,10 +2837,9 @@ window.__ModuleLoader__.load({
         const payload = response.data;
         if (!(response.ok && isObject(payload) && payload.ok === true)) {
           const detail = isObject(payload) ? textOf(payload.error) : '';
-          setNotice({
-            kind: 'error',
-            text: detail === '' ? '恢复失败（HTTP ' + String(response.status) + '）' : detail,
-          });
+          const text = detail === '' ? '恢复失败（HTTP ' + String(response.status) + '）' : detail;
+          setNotice({ kind: 'error', text });
+          pushToast('error', '恢复继承失败（' + member.name + '）：' + text);
           return;
         }
         applyPayload(payload, member, null);
@@ -3866,12 +4043,18 @@ window.__ModuleLoader__.load({
     /* ── 挂载 ─────────────────────────────────────────────────────────────── */
 
     /**
-     * 注册两个互不影响的插槽：
+     * 注册三个互不影响的插槽：
      *  - `plugins.bundle.config`（插件管理页的设置卡片）；
-     *  - `conversation.session.header.actions`（对话头部的「模型」入口）。
+     *  - `conversation.session.header.actions`（对话头部的「模型」入口）；
+     *  - `shell.overlay`（框架级浮层：跨面板 toast）。
      *
      * `ctx.slots.inject(name, cb)` 的回调会在插槽出现时执行、消失时清理，
      * 且可能**重复执行**，所以这里每次都是纯注册，不缓存跨次状态。
+     *
+     * 三个槽里只有 `shell.overlay` 是「可缺席」的：某个版本里如果布局包没声明它，
+     * `slots.inject` 的回调就不会运行（它按声明订阅），toast 静默不出现，
+     * 另外两个槽和面板内提示完全不受影响。所以这里额外包一层 try，绝不让
+     * 一个浮层把整个插槽注册带崩。
      */
     function apply(ctx) {
       const slots = ctx === null || ctx === undefined ? undefined : ctx.slots;
@@ -3889,9 +4072,25 @@ window.__ModuleLoader__.load({
       const disposePicker = slots.inject(HEADER_SLOT, () =>
         slots.register({ name: HEADER_SLOT, id: PICKER_ID, order: 15 }, PickerAction),
       );
+      let disposeToast = () => {};
+      try {
+        disposeToast = slots.inject(TOAST_SLOT, () =>
+          slots.register({ name: TOAST_SLOT, id: TOAST_ID, order: 90 }, ToastLayer),
+        );
+      } catch (error) {
+        try {
+          if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+            console.warn('[dsh-switchboard] toast 层未注册（shell.overlay 不可用）：', error);
+          }
+        } catch {
+          /* 日志失败也不许再抛 */
+        }
+      }
       return () => {
         if (typeof disposeCard === 'function') disposeCard();
         if (typeof disposePicker === 'function') disposePicker();
+        if (typeof disposeToast === 'function') disposeToast();
+        disposeToasts();
       };
     }
 
