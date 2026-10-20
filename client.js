@@ -46,9 +46,34 @@ window.__ModuleLoader__.load({
     const SESSION_PATH = '/api/v1/switchboard/session';
     const SPAWN_PATH = '/api/v1/switchboard/spawn';
     const BULK_PATH = '/api/v1/switchboard/bulk';
+    const SIMULATE_PATH = '/api/v1/switchboard/simulate';
 
     /** 队友名的合法形状，和宿主侧同一条正则（lower-kebab-case）。 */
     const TEAMMATE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+    /** 批量应用后的撤销窗口长度（毫秒）。 */
+    const BULK_UNDO_MS = 5000;
+
+    /**
+     * 跨面板 toast：挂在框架级 `shell.overlay`（`dsh-client-ui-layout` 声明的
+     * list 槽）里，所以关掉设置卡片/头部面板也看得见。
+     *
+     * 这个槽由 ui-layout 的 AppFrame 声明，而 ui-layout 已经在我们的
+     * `dsh.client.inject` 依赖链上（`dsh-client-ui-conversation` 的 inject 里就有
+     * 它），所以**不需要**往 `package.json` 的 inject 里加 layout，也就**不需要重启**。
+     * 万一某个版本里这个槽没被声明：`slots.inject` 的回调根本不会跑，toast 静默失效，
+     * 面板内提示照常 —— 不会抛错。
+     */
+    const TOAST_SLOT = 'shell.overlay';
+    const TOAST_ID = 'switchboard-toast';
+    const TOAST_LIMIT = 3;
+    const TOAST_DEDUPE_MS = 1500;
+    const TOAST_OK_MS = 3000;
+
+    /** 最近使用过的模型：`["provider\0model", ...]`，最多 5 条，LRU。 */
+    const RECENT_KEY = 'dsh-switchboard:recent-models';
+    const RECENT_LIMIT = 5;
+    const RECENT_SEP = '\u0000';
 
     /* ── 取数：所有失败都收敛成 {ok:false, status, data}，从不抛 ─────────────── */
 
@@ -2035,8 +2060,17 @@ window.__ModuleLoader__.load({
       const [bulkBusy, setBulkBusy] = React.useState(false);
       const [bulkError, setBulkError] = React.useState('');
       const [bulkResult, setBulkResult] = React.useState(null);
+      /* 批量二次确认：`{ route, text }`；route 为 null 表示「全部恢复继承」；null = 没有待确认的操作。 */
+      const [bulkConfirm, setBulkConfirm] = React.useState(null);
+      /* 批量撤销：应用成功后 5 秒内有效，携带应用**前**逐个成员的路由快照。 */
+      const [bulkUndo, setBulkUndo] = React.useState(null);
+      const [, setUndoTick] = React.useState(0);
       const rootRef = React.useRef(null);
       const triggerRef = React.useRef(null);
+
+      /* 成员行的「恢复继承」按钮只看点名表里真的有键的名字；派生而不是再存一份，
+         免得两处状态各走各的。 */
+      const fixedNames = fixedRows.filter((row) => row.valid).map((row) => row.key);
 
       // 数据面：只在打开面板时取，避免每个会话一进来就多发一个请求。
       React.useEffect(() => {
@@ -2177,6 +2211,25 @@ window.__ModuleLoader__.load({
         const timer = setTimeout(() => setNotice(null), 2600);
         return () => clearTimeout(timer);
       }, [notice]);
+
+      /* 撤销窗口：到点就撤掉按钮；窗口内每 250ms 抖一下 state，好让「（4s）」倒计时动。
+         不用 CSS 动画算时间——按钮得真的消失，不能只是看起来淡了。 */
+      React.useEffect(() => {
+        if (bulkUndo === null) return undefined;
+        const left = bulkUndo.expiresAt - Date.now();
+        const expiry = setTimeout(() => setBulkUndo(null), Math.max(0, left));
+        const ticker = setInterval(() => setUndoTick((tick) => tick + 1), 250);
+        return () => {
+          clearTimeout(expiry);
+          clearInterval(ticker);
+        };
+      }, [bulkUndo]);
+
+      /** 撤销剩余秒数（向上取整，最低 0）；没有撤销窗口时给 0。 */
+      function undoSecondsLeft() {
+        if (bulkUndo === null) return 0;
+        return Math.max(0, Math.ceil((bulkUndo.expiresAt - Date.now()) / 1000));
+      }
 
       function toggleRow(member) {
         const key = memberKey(member);
@@ -2442,6 +2495,8 @@ window.__ModuleLoader__.load({
         setBulk((current) => ({ ...current, ...patch }));
         setBulkResult(null);
         setBulkError('');
+        // 改了选择就把待确认的那条撤掉：确认条上的目标必须和当前选择一致。
+        setBulkConfirm(null);
       }
 
       /**
@@ -2473,8 +2528,37 @@ window.__ModuleLoader__.load({
         };
       }
 
+      /**
+       * 应用前的逐成员路由快照。撤销就是把它逐条按 `/member` 写回去：
+       * 有名字的用 `name`，没名字的子智能体用 `childId`（宿主会折算成 `#<id>`）。
+       * 本来就在继承（provider/model 皆空）的成员记成 `route: null`，撤销时正好删除点名。
+       */
+      function routeSnapshot() {
+        const items = [];
+        for (const member of members) {
+          if (member.name === '' && member.childId === '') continue;
+          const effort = textOf(member.reasoningEffort);
+          items.push({
+            ...(member.name !== '' ? { name: member.name } : { childId: member.childId }),
+            route:
+              member.provider === '' || member.model === ''
+                ? null
+                : {
+                    provider: member.provider,
+                    model: member.model,
+                    ...(effort === '' ? {} : { reasoningEffort: effort }),
+                  },
+          });
+        }
+        return items;
+      }
+
       async function submitBulk(route) {
         if (bulkBusy) return;
+        // 快照必须在请求**之前**取：响应一回来 members 就已经是新路由了。
+        const snapshot = routeSnapshot();
+        setBulkConfirm(null);
+        setBulkUndo(null);
         setBulkBusy(true);
         setBulkError('');
         setBulkResult(null);
@@ -2496,6 +2580,10 @@ window.__ModuleLoader__.load({
         } else {
           setBulkResult(summarizeBulk(payload));
         }
+        // 5 秒撤销窗口：只有成功才给，失败时「撤销」没有意义。
+        if (snapshot.length > 0) {
+          setBulkUndo({ items: snapshot, expiresAt: Date.now() + BULK_UNDO_MS });
+        }
         if (isObject(payload) && Array.isArray(payload.members)) {
           setMembers(readMemberList(payload.members));
           setPhase('ready');
@@ -2503,6 +2591,87 @@ window.__ModuleLoader__.load({
           return;
         }
         setReloadTick((tick) => tick + 1);
+      }
+
+      /** 点「应用到全部 / 全部恢复继承」先出确认条，不在按钮里直接发请求。 */
+      function askBulk(route) {
+        if (bulkBusy) return;
+        if (members.length === 0) return;
+        setBulkError('');
+        setBulkResult(null);
+        setBulkUndo(null);
+        const count = '将影响 ' + String(members.length) + ' 个成员：';
+        const effort = route === null ? '' : textOf(route.reasoningEffort);
+        setBulkConfirm({
+          route,
+          text:
+            route === null
+              ? count + '全部恢复为继承主 Agent'
+              : count +
+                '全部换成 ' +
+                route.provider +
+                '/' +
+                route.model +
+                (effort === '' ? '（档位自动）' : ' · 档位 ' + effort),
+        });
+      }
+
+      async function confirmBulk() {
+        if (bulkConfirm === null || bulkBusy) return;
+        await submitBulk(bulkConfirm.route);
+      }
+
+      /**
+       * 撤销上一批：逐条把快照写回 `/member`。
+       *
+       * 没有批量撤销端点（也不许加），所以只能一条一条来；这里串行发送是有意的——
+       * 宿主每次都要落盘 rules.json，并发写会互相覆盖，慢一点但结果确定。
+       */
+      async function undoBulk() {
+        if (bulkUndo === null || bulkBusy) return;
+        const items = bulkUndo.items;
+        setBulkUndo(null);
+        setBulkBusy(true);
+        setBulkError('');
+        setBulkResult(null);
+        let restored = 0;
+        let failedCount = 0;
+        let lastMembers = null;
+        let lastSettings = null;
+        for (const item of items) {
+          const response = await request(MEMBER_SET_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ...item, lead }),
+          });
+          const payload = response.data;
+          if (!(response.ok && isObject(payload) && payload.ok === true)) {
+            failedCount += 1;
+            continue;
+          }
+          restored += 1;
+          if (Array.isArray(payload.members)) lastMembers = payload.members;
+          if (isObject(payload.settings) && isObject(payload.settings.members)) {
+            lastSettings = payload.settings.members;
+          }
+        }
+        setBulkBusy(false);
+        if (lastSettings !== null) setFixedRows(readFixedEntries(lastSettings));
+        if (lastMembers !== null) {
+          setMembers(readMemberList(lastMembers));
+          setPhase('ready');
+        } else {
+          setReloadTick((tick) => tick + 1);
+        }
+        setBulkResult({
+          parts: [
+            { text: '已撤销 ' + String(restored) + ' 个成员的路由', warn: false },
+            ...(failedCount === 0
+              ? []
+              : [{ text: String(failedCount) + ' 个撤销失败', warn: true }]),
+          ],
+          note: '',
+        });
       }
 
       function bulkRoute() {
@@ -2574,7 +2743,7 @@ window.__ModuleLoader__.load({
                 onClick: () => {
                   const picked = bulkRoute();
                   if (picked === null) return;
-                  void submitBulk(picked);
+                  askBulk(picked);
                 },
               },
               bulkBusy ? '应用中…' : '应用到全部',
@@ -2586,7 +2755,7 @@ window.__ModuleLoader__.load({
                 className: 'cmp-btn',
                 disabled: bulkBusy || members.length === 0,
                 onClick: () => {
-                  void submitBulk(null);
+                  askBulk(null);
                 },
               },
               '全部恢复继承',
@@ -2595,6 +2764,60 @@ window.__ModuleLoader__.load({
               ? h('span', { className: 'cmp-guide' }, '还没有队友或子智能体')
               : null,
           ),
+          // 二次确认：把「影响多少人、换成什么」摊开，再让用户点第二次。
+          bulkConfirm === null
+            ? null
+            : h(
+                'div',
+                { className: 'cmp-bulkRow' },
+                h('span', { className: 'cmp-bulkResult cmp-bulkWarn' }, bulkConfirm.text),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'cmp-btn cmp-btnPrimary',
+                    disabled: bulkBusy,
+                    onClick: () => {
+                      void confirmBulk();
+                    },
+                  },
+                  '确认应用',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'cmp-btn',
+                    disabled: bulkBusy,
+                    onClick: () => setBulkConfirm(null),
+                  },
+                  '取消',
+                ),
+              ),
+          // 撤销：成功后的 5 秒窗口内可见，带倒计时，到点自己消失。
+          bulkUndo === null
+            ? null
+            : h(
+                'div',
+                { className: 'cmp-bulkRow' },
+                h(
+                  'span',
+                  { className: 'cmp-bulkNote' },
+                  '刚才那批可在 ' + String(undoSecondsLeft()) + ' 秒内撤销',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'cmp-btn',
+                    disabled: bulkBusy,
+                    onClick: () => {
+                      void undoBulk();
+                    },
+                  },
+                  '撤销',
+                ),
+              ),
           bulkError === ''
             ? null
             : h('p', { className: 'cmp-bulkResult cmp-bulkErr', role: 'status' }, bulkError),
