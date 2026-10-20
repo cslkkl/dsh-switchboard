@@ -83,6 +83,9 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 | `maxDepth` | integer | `1` | 生效的最大委派深度 |
 | `applyToFork` | boolean | `false` | 是否也作用于 fork 出来的子会话 |
 
+`sessions` / `asked` **只从设置文件读**（patch 不提供这两项），因为它们是运行时产物，
+不是配置项：一个由「首次派活询问」写入，一个随 `/session` 变更。
+
 单条规则：
 
 | 字段 | 类型 | 含义 |
@@ -94,22 +97,54 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 
 路由对象：`{ provider, model, reasoningEffort? }`。
 
-写入语义：`POST /rules` 按**字段存在性**合并；某字段传 `null` 表示清空。
+写入语义（契约，不可回退）：
+
+- **写入基座必须是 `readJsonFile()` 的原始形态**，不是 `effectiveSettings()` 的归一化视图。
+  后者只保留已知键、且把 patch 值烘进结果；拿它整体覆写会（1）清掉未提及的键，
+  （2）让文件里的旧快照永久盖住以后对 patch 的修改（文件优先 → patch 失效）。
+- **未提及字段一律原样保留**：写入语句固定为 `writeJsonFile(rulesPath(), { ...raw, ...改动 })`。
+  `POST /rules` 只覆盖 7 个键（`enabled` / `rules` / `members` / `defaultRoute` /
+  `maxDepth` / `applyToFork` / `askOnFirst`），`sessions` / `asked` 与未来新增键随 `...raw` 透传。
+- **字段存在性才是「要不要改」**：判据是 `'key' in body`，不是「新值是不是 `undefined`」。
+  否则 `defaultRoute: null`（用户取消勾选）会被当成缺失，旧路由又活回来。
+- **`null` 清空只对 3 个字段成立**：`rules`（→ `[]`）、`members`（→ `{}`）、`defaultRoute`（→ `null`）。
+  `enabled` / `maxDepth` / `applyToFork` / `askOnFirst` 传 `null` 被类型检查丢弃、**保留当前值**，不清空。
+- **`members` 是整表替换语义**：写盘点名表时基座用 `effectiveSettings().members`（已含 patch 层），
+  否则写回后文件里的表会把 patch 里的成员整表挤掉。其余字段无一例外走原始文件。
+  由此产生一个**配置陷阱**：patch 里的 `members` 只在设置文件**没有**该键时生效；
+  一旦 `/spawn` 或界面写过 `members`，文件即成为唯一来源，此后在 patch 里新增的成员不再被读到。
+  要改成员请走界面或 `/member`，不要改 patch。
+- `maxDepth` 有下界：负数（手填 `-1` 会跳过全部子代）按非法值丢弃、保留当前值。
+
+来由与替代方案见 [决策记录](../.agents/notes/2026-10-20-config-write-merge.md)。
 
 ## HTTP 契约
 
-界面通过宿主注册的路由读写，全部挂在 `/api/v1/switchboard/` 下。
+界面通过宿主注册的路由读写，全部挂在 `/api/v1/switchboard/` 下，共 9 个端点。
 
 | 方法 | 路径 | 请求 | 说明 |
 |---|---|---|---|
-| GET | `/state` | — | 有效设置 + provider/model 目录 |
-| POST | `/rules` | 任意字段子集 | 字段级合并写入；`null` 清空 |
-| GET | `/recent` | — | 最近委派记录 |
-| GET | `/members?lead=` | — | 该 Lead 下的成员 + 各自路由 + `sessionRoute` |
-| POST | `/member` | `{name\|childId, route\|null}` | 校验后落盘，并对存活 Agent 立即生效 |
+| GET | `/state` | — | 有效设置 + provider/model 目录（含每模型档位）+ `lastErrors` |
+| POST | `/rules` | 7 字段子集 | 只覆盖这 7 个键，其余原样保留；`null` 仅对 `rules`/`members`/`defaultRoute` 清空。`sessions` / `asked` 不归这里，传了静默忽略。响应带 `lastErrors` |
+| GET | `/recent` | — | 委派记录**与**操作记录混排，取尾部 20 条（`limit` 默认 20）、最新在前。见下 |
+| GET | `/simulate` | `?lead=&name=&label=&childId=` | 规则试算：预览这次派活会命中哪一层。未命中返回 200 + `route: null`。见「[规则试算](#规则试算simulate)」 |
+| GET | `/members?lead=` | — | 该 Lead 下的成员 + 各自路由；`settings` 里含 `enabled`、`sessionRoute`、`asked`（布尔：本对话是否已问过）；响应带 `lastErrors` |
+| POST | `/member` | `{name\|childId, route\|null}` | 校验后落盘，并对存活 Agent 立即生效。`route` 非 `null` 但形状非法 → 400 `需要 provider 和 model`，不静默清点名 |
 | POST | `/spawn` | `{lead, kind, name?, description, prompt, route}` | 创建成员并指定模型 |
 | POST | `/bulk` | `{lead, route\|null, scope}` | 把本对话全部成员换成同一模型 |
 | POST | `/session` | `{lead, route\|null}` | 读写本对话默认；`null` 连同 `asked` 一起清 |
+
+`/recent` 的两类记录：
+
+- **委派记录**带 `childId`。一次委派写两条探针（解析 + 已应用），按 `childId` 合并成一条，
+  所以直接 tail 文件会把同一个孩子算成两次委派。
+- **操作记录**带 `action` 无 `childId`（`spawn` / `member-set` / `bulk` / `session-set` / `ask-*`），
+  各自独立成条。它们没有 `applied` / `memberName` / `label`，表格四列会渲染成空行，
+  所以每条补一个 `summary` 字段（宿主生成的中文短句，如「设为 `provider/model`」）。
+- 两类按各自**最后一次出现的位置**排序后混排，取尾部 20 条。排序依据是文件里的先后
+  而非 `time` 字段：合并后的委派记录要按第二条（已应用）的位置算，否则会沉到旧处。
+
+`probe.jsonl` 有轮转：写入前若文件超 512KB，只保留最后 200 行重写。它不是只增不减的日志。
 
 ## 创建路径的接口差异
 
@@ -121,6 +156,72 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 | 子智能体 | `subagents.startActivation()` | `request.agentOptions` 是官方字段，随请求传下；`subagent/descriptor` 记录真实路由 |
 
 两者都要求传入非 undefined 的 `AbortSignal`（内部调用 `throwIfAborted`）。
+
+## 模型档位元数据
+
+界面要给「这条规则用哪一档」，所以 `/state` 与 `/members` 的 `routes[].models[]` 里每个模型都带：
+
+```jsonc
+{ "reasoning": { "defaultEffort": "high", "efforts": [{ "id": "off", "name": "关" }, …] } }
+```
+
+`reasoning: null` = 该模型不声明任何档位（界面禁用档位下拉并提示原因）。
+
+两个必须记住的事实：
+
+- **`listModels()` 不含 `reasoning`**。它返回 `LlmModelInfo`；档位只在 `resolveModelInfo()`
+  的 `LlmResolvedModelInfo` 里。所以 `describeRoutes()` 必须**逐模型**再解析一次
+  （官方 `buildModelCatalog()` 同样做法）。
+- 逐模型解析带进程内缓存，TTL 60 秒（`REASONING_CACHE_TTL_MS`，按 `provider\0model` 作键）。
+  单次解析抛错降级成 `null`，不让一个模型的适配器拒绝把整个 `/state` 打成 500。
+
+权威形状是 `dsh-llm` 的 `LlmModelReasoningInfo`：`{ efforts: [{ id, name, description? }], defaultEffort? }`，
+且 `normalizeModelInfo()` 保证 `efforts` 非空、`defaultEffort` 必在 `efforts` 之内。
+
+客户端据此做两件事：档位下拉的选项来自 `reasoning.efforts`，首项恒为「自动（由适配器挑）」；
+换渠道/模型时用 `reconcileEffort()` 决定旧档位留不留 —— 新模型声明了这个档才保留，
+否则退回自动。一刀切清空会丢用户刚选的档（违反「档位必须与路由一起确定」），
+一刀切保留又会把不支持的档带到新模型上硬失败（`UNSUPPORTED_REASONING_EFFORT`）。
+
+## 规则试算（`/simulate`）
+
+设置卡片每条规则行尾有输入框 + 「试算」按钮，回车或点击才发请求（不自动发、不防抖轮询）。
+语义是**下发前预览**：「这个成员名 / 这段任务描述，真派活时会命中哪一层、用哪个模型」。
+
+- **复用 `resolveRoute()`**，不另写一套匹配。预览与实际委派走同一条解析链，
+  不存在「预览说命中 A、实际跑 B」的漂移。
+- 四个 query 全部可选、缺省按空串：`lead` / `name` / `label` / `childId`。
+  设置卡片拿不到会话上下文，`lead` 恒为空，所以卡片里试算不会返回 `session`。
+- 响应 `{ ok, route, hit, hitKind }`。`hit` 原样回传内部代号（界面已有翻译），
+  `hitKind` 是给前端分组用的稳定枚举：`member` / `child` / `session` / `name` /
+  `name-contains` / `label-contains` / `default` / `none`。
+- `route` 只投影 `provider` / `model` / 可选 `reasoningEffort`。命中规则时
+  `resolveRoute()` 会把规则对象的 `match` 一起展开，直接透传会让「路由」多出一个不属于它的键。
+- **未命中返回 200 + `route: null` + `hitKind: 'none'`，不是 404**。前端要能区分
+  「没命中任何规则（将继承 Lead）」和「接口根本没上线/挂了」——后者才该提醒用户。
+  客户端对 404/501 单独给「试算接口还没上线」的 warn 提示。
+- 只读：不发任何 `POST`，不写盘。
+- 增删规则与保存成功后清空试算结果，因为行下标会移位，旧结果会贴到错的规则上。
+
+## 失败可见性
+
+换路由失败不打死子会话，但**不能只留日志**。宿主维护一个模块级 `lastErrors`
+（上限 10 条，最新在前，形状 `{ time, childId, route, reason }`），`pickEffort`
+与 `installRoute` 失败都记一条；`/state`、`/members`、`/rules` 的响应都带这个字段。
+它与 `probe.jsonl` 同源不同用：探针是落盘流水，`lastErrors` 是给界面的内存榜
+（只留失败，进程重启即清空）。
+
+现状：面板顶部有**失败红条**（`renderErrorBar()`），数据来自 `/members`、`/state`、
+`/rules` 三处响应里的 `lastErrors`。
+
+- 默认只显示**最新 1 条**，一行话讲清三件事：「`<成员名>` 换成 `<provider/model>` 失败：`<原因>`」。
+  只写「失败」等于没说 —— 用户下一步要看的就是谁、想换成什么、为什么没成。
+- 多于 1 条时给「还有 N 条」可展开，展开项带时间与逐条原因。
+- `×` 关闭记的是**被关闭那条的 `time`**（不是布尔标记），所以更新的失败会自动让红条重新出现，
+  不用手动复位。关闭只影响显示，不动配置、不写盘。
+- 无失败时整块不渲染，不占位。
+- 客户端对条目做形状归一化：`reason` 为空的条目丢弃（没原因可念的条目对用户没意义），
+  顺序不重排（宿主已是最新在前）。
 
 ## 生效时机
 
@@ -136,6 +237,10 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 ## 防错清单
 
 - **换路由必须同时确定 effort**：否则回落到路由级默认档，目标模型不支持就硬失败。
+- **配置写入不得整体覆写**：写入基座必须是 `readJsonFile()` 原始形态，`{ ...raw, ...改动 }`。
+  用 `effectiveSettings()` 当基座会清掉 `sessions` / `asked` / 未知键，症状是「保存即清空本对话默认、下次派活重新询问」。
+  见 [决策记录](../.agents/notes/2026-10-20-config-write-merge.md)。
+- **`listModels()` 没有 `reasoning` 字段**：档位只在 `resolveModelInfo()` 里，需要逐模型补一次并缓存。
 - **`asked` 不能按路由对象校验**：其值是时间戳；用 `normalizeMembers` 处理会整表被过滤，导致每会话反复询问。
 - **`client-modules` 的清单缓存判空即永久跳过**：详见 [依据记录](../.agents/notes/client-modules-cache.md)。
 - **团队名册只增不删**：官方无移除 API；上限由 `agent-team` 行的 `maxMembers` 决定。

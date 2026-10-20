@@ -4,6 +4,7 @@
 
 - 换路由必须同时确定推理档位，否则回落到路由级默认档并可能硬失败。见 [架构·推理档位耦合](docs/ARCHITECTURE.md#推理档位耦合必须一起处理)。
 - 配置写 `rules.json`，不写 patch；写 patch 会重建 fiber。见 [架构·配置契约](docs/ARCHITECTURE.md#配置契约)。
+- 配置写入一律 `{ ...readJsonFile(), ...本次改动 }`，**不得整体覆写**（否则清掉 `sessions`/`asked`）。见 [决策记录](.agents/notes/2026-10-20-config-write-merge.md)。
 - 只用官方接缝（`agent/created` / `agent/request` / `agent.options`），不 monkey-patch 他人服务方法。
 - 客户端模块清单在宿主启动时扫描；改了 `package.json` 的 `dsh.client` 段必须重启。
 - 文档改动后跑链接校验；大批量改动后跑换行校验。
@@ -23,18 +24,34 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 
 ## 验证快照
 
-- 无 CI。当前状态为命令级实测通过：两个半端 `node --check` 通过，模块用 React stub 执行并注册两个 slot。
+无 CI。以下为 2026-10-20 命令级 + 真实实例实测：
+
+- `node --check index.js`、`node --check client.js` 均 exit 0。
+- 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1701 行、客户端 `client.js` 3862 行。
+- `GET /state` 200：带 `lastErrors`（当前 0 条），`routes[].models[].reasoning` 形状正确
+  （例 `cpa-workbuddy/wb/deepseek-v4.1-flash` → `{defaultEffort:"high", efforts:[off,high]}`）。
+- `/simulate` 三种命中：`?name=cheap-worker` → `hitKind:"member"`；`?name=cheap-zzz` →
+  `hitKind:"name-contains"`；`?name=zzz-no-match` → 200 + `route:null` + `hitKind:"none"`。
+- `GET /members` 响应含 `lastErrors`。
+- `GET /recent` 返回 20 条，委派与操作记录混排，`summary` 示例：
+  `设为 cpa-workbuddy/wb/deepseek-v4.1-flash`、`询问已跳过（本对话问过）`、
+  `本对话默认设为 cpa-trae/trae/deepseek-v4.1-flash`。
+- 配置写入实证：`POST /rules {"enabled":true}` 后 `sessions` 仍 1 条、`asked` 仍 2 条、
+  `askOnFirst` 保住，与备份逐项一致（唯一差异是补上了原本缺失的 `defaultRoute: null`）。
+  本轮全程 `rules.json` 只读，三条数据未变。
 - 换模型已在真实实例验证：`inherited wb/…` → `applied cpa-trae/trae/…`，探针记 `hit: member:<名>`。
 - 本对话默认已验证：`hit: "session"`，且第二次派活记 `ask-skip: already-asked`。
 
 ## 待办
 
-- [ ] 拆 `client.js`（约 2900 行）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
+- [ ] 拆 `client.js`（3862 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
 - [ ] L3 工具链（ESLint / Prettier / pre-commit / CI）尚未接入；当前零依赖无 lint 配置。
 - [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库）。
+- [ ] 链接校验脚本待固化：目前靠一次性临时脚本（校验相对路径 + 手写 `#anchor` 对标题 slug），未进 `tools/`。固化成 `tools/check-links.mjs` 要连带更新 [tools/README.md](tools/README.md) 与上方「常用命令」（[tools/AGENTS.md](tools/AGENTS.md) 的硬要求），是独立一条工作。
 
 ## 活跃坑
 
+- **`POST /rules` 曾整体覆写 `rules.json`**（已收敛，别回退）：拿 `effectiveSettings()` 归一化视图当写入基座，把 `sessions`（本对话默认）、`asked`（已问标记）、`askOnFirst` 一起清掉 —— 症状是「保存设置即清空本对话默认，下次派活又被问一次」。现在所有写路径一律 `{ ...readJsonFile(), ...改动 }`。回归检查：`POST /rules {"enabled":true}` 后 `sessions`/`asked` 条目数必须不变。见 [决策记录](.agents/notes/2026-10-20-config-write-merge.md)。
 - `client-modules` 把「这一行有没有 client 包」按 `sourceKey` 缓存，**判空后永不重试**：装/卸插件与宿主启动撞车会让本插件从浏览器清单消失，唯一解法是再重启一次。见 [依据记录](.agents/notes/client-modules-cache.md)。
 - 客户端半端的清单问题症状：`/plugins/??` 里没有本包、`__DSH_BOOT__.entries` 也没有，但宿主端点照常 200。
 - `client.js` 里给下拉弹层加 `contain: size` 会让弹层高度塌成 0，只剩一条搜索框的缝。
