@@ -2864,6 +2864,93 @@ window.__ModuleLoader__.load({
         };
       }
 
+      /* ── 失败红条：换路由失败必须被看见 ─────────────────────────────── */
+
+      /** 失败条目里的人是谁：能对上成员就用名字，只有 childId 就用短 id。 */
+      function errorWho(entry) {
+        const childId = textOf(entry.childId);
+        if (childId === '') return '某个成员';
+        for (const member of members) {
+          if (member.childId !== childId) continue;
+          return member.name === '' ? shortId(childId) : member.name;
+        }
+        return shortId(childId);
+      }
+
+      /**
+       * 一条失败写成能指导行动的一句话：谁、想换成什么、为什么没成。
+       * 只写"失败"等于没说 —— 用户下一步要看的就是这三件事。
+       */
+      function errorText(entry) {
+        const target = textOf(entry.route);
+        const action = target === '' ? ' 换模型失败：' : ' 换成 ' + target + ' 失败：';
+        return errorWho(entry) + action + textOf(entry.reason);
+      }
+
+      /**
+       * 红条：默认只显示最新 1 条 + 「还有 N 条」，点开看全部。
+       *
+       * 空态整块不渲染（不留占位、不写"暂无错误"）—— 没失败的时候这块本来就不该存在。
+       * 关掉只是本地状态；只要宿主又记了**更新**的失败，红条会自己回来。
+       */
+      function renderErrorBar() {
+        if (lastErrors.length === 0) return null;
+        const newest = lastErrors[0];
+        if (newest.time <= errorsHiddenAt) return null;
+        const rest = lastErrors.length - 1;
+        const children = [
+          h(
+            'div',
+            { className: 'cmp-errorRow' },
+            h('p', { className: 'cmp-errorText', role: 'status' }, errorText(newest)),
+            rest > 0
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'cmp-btn cmp-errorBarBtn',
+                    'aria-expanded': errorsOpen,
+                    onClick: () => setErrorsOpen(!errorsOpen),
+                  },
+                  errorsOpen ? '收起' : '还有 ' + String(rest) + ' 条',
+                )
+              : null,
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cmp-close',
+                'aria-label': '收起这条失败提示',
+                title: '关闭（不影响配置）',
+                onClick: () => {
+                  setErrorsOpen(false);
+                  setErrorsHiddenAt(newest.time);
+                },
+              },
+              '×',
+            ),
+          ),
+        ];
+        if (errorsOpen && rest > 0) {
+          children.push(
+            h(
+              'ul',
+              { className: 'cmp-errorList' },
+              lastErrors.slice(1).map((entry, index) =>
+                h(
+                  'li',
+                  { className: 'cmp-errorItem', key: 'err:' + String(index) + ':' + String(entry.time) },
+                  h('span', { className: 'cmp-errorTime' }, clockOf(entry.time)),
+                  ' ',
+                  errorText(entry),
+                ),
+              ),
+            ),
+          );
+        }
+        return h('div', { className: 'cmp-errorBar' }, children);
+      }
+
       function renderBulkBar() {
         const route = bulkRoute();
         const canApply = route !== null && !bulkBusy && members.length > 0;
