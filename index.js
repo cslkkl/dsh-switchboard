@@ -292,6 +292,24 @@ function resolveRoute(settings, { memberName, label, childId, leadId }) {
 }
 
 /**
+ * `resolveRoute` 的 `hit` 代号 → 界面分组用的 `hitKind`。
+ *
+ * `hit` 保持原样回传（界面已有 `hitLabel()` 会把它翻成人话），这里只补一个稳定的
+ * 枚举，免得前端再对 `name~` / `label~` 这类内部写法做字符串判断。
+ */
+function hitKindOf(hit) {
+  if (typeof hit !== 'string' || hit === '') return 'none';
+  if (hit.startsWith('member:')) return 'member';
+  if (hit.startsWith('child:')) return 'child';
+  if (hit === 'session') return 'session';
+  if (hit.startsWith('name:')) return 'name';
+  if (hit.startsWith('name~')) return 'name-contains';
+  if (hit.startsWith('label~')) return 'label-contains';
+  if (hit === '(default)') return 'default';
+  return 'none';
+}
+
+/**
  * 挑一个目标模型**真正接受**的档位。
  *
  * 为什么不能只算一次：`off` 不是万能兜底 —— 实测 `cpa-trae/trae/glm-5.3-flash`
@@ -1169,6 +1187,49 @@ export function apply(ctx, config) {
       });
 
       /**
+       * 规则试算：**下发前**预览「这次派活会命中谁、用哪个模型」。
+       *
+       * query（四个都可选，缺省按空串）：
+       * `lead=<Lead 会话 id>&name=<成员名>&label=<任务描述>&childId=<子会话 id>`
+       *
+       * 解析**直接复用** `resolveRoute()` —— 与真正委派走同一条逻辑，不存在
+       * 「预览一套、实际另一套」的漂移。未命中任何层（该继承 Lead）时仍返回 200，
+       * `route: null` / `hit: null` / `hitKind: 'none'`：前端要能区分「没规则」
+       * 和「接口挂了」。只读，不写盘。
+       */
+      const offSimulate = register({
+        path: '/api/v1/switchboard/simulate',
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: async (request) => {
+          const url = new URL(request.url ?? 'http://localhost/');
+          const param = (name) => (url.searchParams.get(name) ?? '').trim();
+          const settings = effectiveSettings(config);
+          const resolved = resolveRoute(settings, {
+            memberName: param('name'),
+            label: param('label'),
+            // 传裸 id：`resolveRoute` 内部自己加 `#` 前缀去找点名表。
+            childId: param('childId'),
+            // 空串 = 没有「本对话默认」这一层，其余照常解析。
+            leadId: param('lead'),
+          });
+          if (resolved === undefined) {
+            return json({ ok: true, route: null, hit: null, hitKind: 'none' });
+          }
+          const { hit } = resolved;
+          /* 只投影契约里的三个字段：`resolveRoute` 命中规则时会把规则的 `match`
+             一起展开出来（规则对象长 `{match, provider, model, reasoningEffort?}`），
+             直接透传会让响应多出一个不该属于「路由」的键。 */
+          const route = {
+            provider: resolved.provider,
+            model: resolved.model,
+            ...(resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort }),
+          };
+          return json({ ok: true, route, hit, hitKind: hitKindOf(hit) });
+        },
+      });
+
+      /**
        * 创建队友 / 子智能体，并指定它的模型。
        *
        * body: `{ lead, kind: 'teammate'|'subagent', name?, description, prompt,
@@ -1524,6 +1585,7 @@ export function apply(ctx, config) {
         offState();
         offRules();
         offRecent();
+        offSimulate();
         offMembers();
         offMemberSet();
         offSpawn();
