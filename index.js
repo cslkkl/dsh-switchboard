@@ -36,7 +36,7 @@
  * @module dsh-switchboard
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -72,11 +72,40 @@ function writeJsonFile(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2), 'utf8');
 }
 
+/** `probe.jsonl` 的轮转阈值：追加前超过它就只留最后若干行重写。 */
+const PROBE_ROTATE_BYTES = 512 * 1024;
+/** 轮转后保留的行数（约等于最近几百条记录，够设置页回看）。 */
+const PROBE_ROTATE_KEEP_LINES = 200;
+
+function probePath() {
+  return join(storageDir(), 'probe.jsonl');
+}
+
+/**
+ * 追加写之前按大小轮转，避免 `probe.jsonl` 只涨不减。
+ *
+ * 只用 `statSync` + 一次读 + 一次写，不引依赖；任何失败都静默跳过 ——
+ * 诊断日志轮转失败绝不能影响委派本身。
+ */
+function rotateProbeIfNeeded() {
+  const path = probePath();
+  try {
+    if (statSync(path).size <= PROBE_ROTATE_BYTES) return;
+    const text = readFileSync(path, 'utf8');
+    const lines = text.split('\n').filter((line) => line.trim() !== '');
+    const kept = lines.slice(-PROBE_ROTATE_KEEP_LINES);
+    writeFileSync(path, kept.length === 0 ? '' : kept.join('\n') + '\n', 'utf8');
+  } catch {
+    /* 文件还不存在 / 读不到：下一次追加会自己创建 */
+  }
+}
+
 function appendProbe(entry) {
   try {
     const dir = storageDir();
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'probe.jsonl'), JSON.stringify({ time: Date.now(), ...entry }) + '\n', {
+    rotateProbeIfNeeded();
+    writeFileSync(probePath(), JSON.stringify({ time: Date.now(), ...entry }) + '\n', {
       encoding: 'utf8',
       flag: 'a',
     });
@@ -85,16 +114,79 @@ function appendProbe(entry) {
   }
 }
 
+/** 截短长文本（诊断原因可能很长，塞进表格会炸行）。 */
+function shortText(value, max = 80) {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  return text.length <= max ? text : text.slice(0, max) + '…';
+}
+
 /**
- * 最近一次委派的解析结果，给设置页看。
+ * 一条探针记录的「一句话说明」，给设置页的最近记录表格用。
  *
- * ⚠️ 一次委派会写**两条**探针：先写「路由/档位解析」，再写「已应用」。所以按
- * childId 合并后再取最后 N 个 —— 直接 tail 会把同一孩子的两条当成两次委派。
+ * 为什么需要它：`/recent` 里现在不只有「委派」记录，还有 `spawn` / `member-set`
+ * / `bulk` / `ask-*` 这些**操作**记录。它们没有 `applied` / `resolved`，而界面
+ * 的表格是从 `event.applied` 里取「模型」和「为什么」两列的（`client.js` 的
+ * `routeRows`）—— 于是这类记录会渲染成一行全是「—」的空行。`summary` 让表格至少
+ * 有东西可显示；前端未升级时这个字段被忽略，不影响旧渲染。
  */
-function readRecentProbes(limit = 12) {
+function summarizeProbe(entry) {
+  const route = typeof entry.route === 'string' ? entry.route : '';
+  const action = typeof entry.action === 'string' ? entry.action : '';
+  switch (action) {
+    case 'spawn': {
+      const kind = entry.kind === 'subagent' ? '子智能体' : '队友';
+      const name = typeof entry.name === 'string' && entry.name !== '' ? ` ${entry.name}` : '';
+      return `创建${kind}${name}`;
+    }
+    case 'ask-skip':
+      return entry.why === 'already-asked'
+        ? '询问已跳过（本对话问过）'
+        : `询问已跳过（${shortText(entry.why ?? '未知原因', 40)}）`;
+    case 'asked-first':
+      return `本对话默认：${shortText(entry.answer ?? '—', 60)}`;
+    case 'asked-first-applied':
+      return `已应用到当前子代：${route}`;
+    case 'ask-timeout':
+      return '询问超时，保持继承';
+    case 'ask-failed':
+      return `询问失败：${shortText(entry.error)}`;
+    case 'ask-options-partial':
+      return '部分渠道的模型列表读取失败';
+    case 'member-set':
+      return route === '' ? '清除点名' : `设为 ${route}`;
+    case 'bulk': {
+      const scope = entry.scope === 'members' ? '队友' : entry.scope === 'subagents' ? '子智能体' : '全部';
+      return route === '' ? `批量恢复继承（${scope}）` : `批量设为 ${route}（${scope}）`;
+    }
+    case 'session-set':
+      return route === '' ? '清除本对话默认' : `本对话默认设为 ${route}`;
+    default:
+      break;
+  }
+  if (entry.skipped === 'no-rule') return '继承 Lead（未命中规则）';
+  if (typeof entry.rejected === 'string') return `被适配器拒绝：${shortText(entry.rejected)}`;
+  if (typeof entry.installFailed === 'string') return `安装失败：${shortText(entry.installFailed)}`;
+  return '';
+}
+
+/**
+ * 最近委派 / 操作记录，给设置页看。
+ *
+ * 收两类记录：
+ * - **委派**（带 `childId`）：一次委派会写**两条**探针（先「路由/档位解析」，
+ *   再「已应用」），所以按 `childId` 合并成一条，否则同一个孩子会被算成两次；
+ * - **操作**（带 `action`，无 `childId`）：`spawn` / `member-set` / `bulk` /
+ *   `session-set` / `ask-*`。这些不参与合并，各自独立成条 —— 否则用户「刚点了
+ *   设成某模型」在面板里根本看不到。
+ *
+ * 合并后的记录按**最后一次出现**的时间排序，再取最后 `limit` 条、最新在前。
+ */
+function readRecentProbes(limit = 20) {
   try {
-    const text = readFileSync(join(storageDir(), 'probe.jsonl'), 'utf8');
+    const text = readFileSync(probePath(), 'utf8');
     const byChild = new Map();
+    const slots = [];
+    let seq = 0;
     for (const line of text.split('\n')) {
       if (line.trim() === '') continue;
       let entry;
@@ -577,6 +669,9 @@ function describeTeam(ctx, registry, leadSessionId, settings) {
   // 历史成员没有存活 Agent，只能从探针日志里回读它上次实际用的路由。
   const knownRoutes = new Map();
   for (const event of readRecentProbes(200)) {
+    // `readRecentProbes` 现在也会返回没有 childId 的操作记录（spawn/bulk/…），
+    // 这里只认委派记录，否则会把 `undefined` 当成键塞进表里。
+    if (typeof event.childId !== 'string') continue;
     if (event.applied !== undefined) knownRoutes.set(event.childId, event.applied);
     else if (event.resolved !== undefined) knownRoutes.set(event.childId, event.resolved);
   }
