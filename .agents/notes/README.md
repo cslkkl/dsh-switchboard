@@ -17,6 +17,7 @@
 | [2026-10-20-route-seam.md](2026-10-20-route-seam.md) | 决策 | 用什么接缝改写子会话路由 |
 | [2026-10-20-reasoning-effort-coupling.md](2026-10-20-reasoning-effort-coupling.md) | 决策 | 换路由必须同时确定推理档位 |
 | [2026-10-20-session-default-ask.md](2026-10-20-session-default-ask.md) | 决策 | 首次派活询问与「本对话默认」 |
+| [2026-10-20-config-write-merge.md](2026-10-20-config-write-merge.md) | 决策 | 配置写入必须保留未提及字段 |
 | [client-modules-cache.md](client-modules-cache.md) | 依据 | 客户端模块清单缓存判空即永久跳过 |
 
 ## 出口
