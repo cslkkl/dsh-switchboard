@@ -103,13 +103,66 @@ function readRecentProbes(limit = 12) {
       } catch {
         continue;
       }
-      if (typeof entry?.childId !== 'string') continue;
-      byChild.set(entry.childId, { ...(byChild.get(entry.childId) ?? {}), ...entry });
+      if (typeof entry !== 'object' || entry === null) continue;
+      const childId = typeof entry.childId === 'string' ? entry.childId : '';
+      const action = typeof entry.action === 'string' ? entry.action : '';
+      // 既不是委派也不是操作：跳过（例如只有 failed 之类的诊断碎片）。
+      if (childId === '' && action === '') continue;
+      if (childId === '') {
+        slots.push({ order: seq++, record: { ...entry } });
+        continue;
+      }
+      const existing = byChild.get(childId);
+      if (existing === undefined) {
+        const slot = { order: seq++, record: { ...entry } };
+        byChild.set(childId, slot);
+        slots.push(slot);
+        continue;
+      }
+      // 同一孩子的第二条：合并进同一条，并按「最后一次」重排位置。
+      existing.record = { ...existing.record, ...entry };
+      existing.order = seq++;
     }
-    return [...byChild.values()].slice(-limit).reverse();
+    slots.sort((a, b) => a.order - b.order);
+    const picked = slots.slice(-limit).map((slot) => slot.record);
+    for (const record of picked) {
+      const summary = summarizeProbe(record);
+      if (summary !== '') record.summary = summary;
+    }
+    return picked.reverse();
   } catch {
     return [];
   }
+}
+
+/* ── 失败可见化 ───────────────────────────────────────────────────────── */
+
+/**
+ * 换路由失败的最近记录，给设置页读。
+ *
+ * 为什么要有它：`pickEffort` 被拒、`installRoute` 抛错时，此前只写探针 + `logger.warn`，
+ * 前端零感知 —— 用户看到的是「点了没反应、还是原来的模型」。这里留一份进程内小队列，
+ * `/state` 与 `/members` 一并返回。
+ *
+ * 只留失败，不留成功（它是失败榜不是流水）；最新在前，与 `readRecentProbes` 同序。
+ */
+const LAST_ERROR_LIMIT = 10;
+const lastErrors = [];
+
+/** 记一条失败：`{ time, childId, route, reason }`。 */
+function noteRouteError({ childId, route, reason }) {
+  lastErrors.push({
+    time: Date.now(),
+    childId: typeof childId === 'string' ? childId : '',
+    route: typeof route === 'string' ? route : '',
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
+  if (lastErrors.length > LAST_ERROR_LIMIT) lastErrors.splice(0, lastErrors.length - LAST_ERROR_LIMIT);
+}
+
+/** 最近失败，最多 `LAST_ERROR_LIMIT` 条，最新在前。 */
+function recentRouteErrors() {
+  return lastErrors.slice().reverse();
 }
 
 /* ── 规则 ─────────────────────────────────────────────────────────────── */
@@ -900,29 +953,47 @@ export function apply(ctx, config) {
           attempts: picked.attempts,
         });
       } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
         appendProbe({
           childId: agent.id,
           depth,
           memberName,
           label,
           resolved: route,
-          rejected: error instanceof Error ? error.message : String(error),
+          rejected: reason,
           reasoning: error?.reasoning ?? null,
           attempts: error?.attempts ?? null,
         });
+        noteRouteError({ childId: agent.id, route: `${route.provider}/${route.model}`, reason });
         ctx.logger('dsh-switchboard')?.warn?.(
           'switchboard: 路由 %s/%s 不可用，保留继承路由：%s',
           route.provider,
           route.model,
-          error instanceof Error ? error.message : String(error),
+          reason,
         );
         return;
       }
 
-      const installed = installRoute(agent, {
-        ...route,
-        ...(effort === undefined ? {} : { reasoningEffort: effort }),
-      });
+      // 安装本身也可能抛（`agent.ctx.effect` 阶段）；抛了同样保留继承路由、同样留痕，
+      // 而不是让异常冒到 `agent/created` 的调用方那里。
+      let installed;
+      try {
+        installed = installRoute(agent, {
+          ...route,
+          ...(effort === undefined ? {} : { reasoningEffort: effort }),
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        appendProbe({ childId: agent.id, depth, memberName, label, resolved: route, installFailed: reason });
+        noteRouteError({ childId: agent.id, route: `${route.provider}/${route.model}`, reason });
+        ctx.logger('dsh-switchboard')?.warn?.(
+          'switchboard: 安装路由 %s/%s 失败，保留继承路由：%s',
+          route.provider,
+          route.model,
+          reason,
+        );
+        return;
+      }
       disposers.set(agent.id, installed.dispose);
       appendProbe({
         childId: agent.id,
@@ -972,6 +1043,8 @@ export function apply(ctx, config) {
           return json({
             ok: true,
             settings,
+            // 最近换路由失败（最多 10 条，最新在前）：界面据此提示「哪条没换成、为什么」。
+            lastErrors: recentRouteErrors(),
             routes: await describeRoutes(connectionCtx),
           });
         },
@@ -1105,6 +1178,8 @@ export function apply(ctx, config) {
               asked: leadSessionId === undefined ? undefined : settings.asked?.[leadSessionId] !== undefined,
             },
             members: describeTeam(connectionCtx, registry, leadSessionId, settings),
+            // 最近换路由失败（最多 10 条，最新在前），与 `/state` 同一份来源。
+            lastErrors: recentRouteErrors(),
             routes: await describeRoutes(connectionCtx),
           });
         },
