@@ -1,0 +1,8 @@
+# 统一换行：仓库里一律 LF，检出时按平台。避免 Windows 上 git 每次都报
+# "LF will be replaced by CRLF" 的噪音，也避免 diff 里出现整文件换行变更。
+* text=auto eol=lf
+
+# 图片是二进制，别让 git 试图做文本转换或 diff。
+*.png binary
+*.jpg binary
+*.webp binary

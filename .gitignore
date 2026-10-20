@@ -1,0 +1,13 @@
+# 依赖与构建产物
+node_modules/
+*.log
+
+# 本机的临时诊断产物（不要进版本库）
+.probe/
+*.probe.jsonl
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
