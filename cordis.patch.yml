@@ -1,13 +1,13 @@
-# dsh-child-model 的 Loader 层：在 profile 根上插入本插件一行。
+# dsh-model-roster 的 Loader 层：在 profile 根上插入本插件一行。
 #
 # ⚠️ 这是**首次默认值**，不是唯一入口：运行期以
-# $DSH_HOME/storages/dsh-child-model/rules.json 为准（设置页写那里，改动即时生效，
+# $DSH_HOME/storages/dsh-model-roster/rules.json 为准（设置页写那里，改动即时生效，
 # 不触发插件树重建）。两处都没有默认路由时，子智能体保持继承 Lead 的路由。
 #
 # ⚠️ 不要让别的 patch 用同一个 id 整行覆盖这里 —— 后层是**整行替换**，不深合并。
 - insert:
-    - id: dsh-child-model
-      name: dsh-child-model
+    - id: dsh-model-roster
+      name: dsh-model-roster
       config:
         enabled: true
         # null = 不干预（推荐）。要「所有子智能体都换模型」就填一条路由。

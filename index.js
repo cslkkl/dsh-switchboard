@@ -1,5 +1,5 @@
 /**
- * dsh-child-model —— 宿主半边。
+ * dsh-model-roster —— 宿主半边。
  *
  * 让**子智能体**（`subagent` 工具、`workflow` 的 `agent()`）与**智能体团队的队友**
  * 跑在与主 Agent 不同的模型上，并且按规则挑。
@@ -28,19 +28,19 @@
  *
  * ## 状态放在哪
  *
- * 规则文件 `$DSH_HOME/storages/dsh-child-model/rules.json`，优先于 patch 里的
+ * 规则文件 `$DSH_HOME/storages/dsh-model-roster/rules.json`，优先于 patch 里的
  * `config`。原因：设置页写回 patch 会触发 fiber 重建（cpa-switch 的踩坑记录），
  * 而这份配置只影响下一次委派，没有必要重建插件树。patch 里的 config 仍是
  * 有效入口（手写/首次默认），文件只是运行期覆盖层。
  *
- * @module dsh-child-model
+ * @module dsh-model-roster
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export const name = 'dsh-child-model';
+export const name = 'dsh-model-roster';
 
 /** 子 Agent 覆盖用的默认最大深度：只作用于直接子代，避免深层嵌套被意外改写。 */
 const DEFAULT_MAX_DEPTH = 1;
@@ -51,7 +51,7 @@ function dshHome() {
 }
 
 function storageDir() {
-  return join(dshHome(), 'storages', 'dsh-child-model');
+  return join(dshHome(), 'storages', 'dsh-model-roster');
 }
 
 function rulesPath() {
@@ -674,7 +674,7 @@ function askOnceForSession(ctx, config, leadAgent, childId) {
     agent: leadAgent,
     questions: [
       {
-        id: 'child-model-default',
+        id: 'model-roster-default',
         header: '子智能体模型',
         question:
           '这个对话里创建子智能体和队友时，用哪个模型？选完会作为本对话的默认，之后每次派活都用它。',
@@ -899,8 +899,8 @@ export function apply(ctx, config) {
           reasoning: error?.reasoning ?? null,
           attempts: error?.attempts ?? null,
         });
-        ctx.logger('dsh-child-model')?.warn?.(
-          'child-model: 路由 %s/%s 不可用，保留继承路由：%s',
+        ctx.logger('dsh-model-roster')?.warn?.(
+          'model-roster: 路由 %s/%s 不可用，保留继承路由：%s',
           route.provider,
           route.model,
           error instanceof Error ? error.message : String(error),
@@ -953,7 +953,7 @@ export function apply(ctx, config) {
       const register = connectionCtx.connection.fetch.register;
 
       const offState = register({
-        path: '/api/v1/child-model/state',
+        path: '/api/v1/model-roster/state',
         methods: ['GET'],
         requestBody: 'buffered',
         fetch: async () => {
@@ -967,7 +967,7 @@ export function apply(ctx, config) {
       });
 
       const offRules = register({
-        path: '/api/v1/child-model/rules',
+        path: '/api/v1/model-roster/rules',
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
@@ -996,7 +996,7 @@ export function apply(ctx, config) {
       });
 
       const offRecent = register({
-        path: '/api/v1/child-model/recent',
+        path: '/api/v1/model-roster/recent',
         methods: ['GET'],
         requestBody: 'buffered',
         fetch: async () => json({ ok: true, events: readRecentProbes() }),
@@ -1009,7 +1009,7 @@ export function apply(ctx, config) {
        *          route: {provider, model, reasoningEffort?} }`
        */
       const offSpawn = register({
-        path: '/api/v1/child-model/spawn',
+        path: '/api/v1/model-roster/spawn',
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
@@ -1064,7 +1064,7 @@ export function apply(ctx, config) {
        * 数据源有两层：存活的 Agent（能立刻改）+ Lead 日志里的历史成员（只能预配置）。
        */
       const offMembers = register({
-        path: '/api/v1/child-model/members',
+        path: '/api/v1/model-roster/members',
         methods: ['GET'],
         requestBody: 'buffered',
         fetch: async (request) => {
@@ -1092,7 +1092,7 @@ export function apply(ctx, config) {
        * 不是等下次 spawn。传 `route: null` 表示清掉点名、回到规则/继承。
        */
       const offMemberSet = register({
-        path: '/api/v1/child-model/member',
+        path: '/api/v1/model-roster/member',
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
@@ -1192,7 +1192,7 @@ export function apply(ctx, config) {
        * - **已回收的成员**：写点名表（队友用名字、子智能体用 `#childId`），下次唤醒生效。
        */
       const offBulk = register({
-        path: '/api/v1/child-model/bulk',
+        path: '/api/v1/model-roster/bulk',
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {
@@ -1300,7 +1300,7 @@ export function apply(ctx, config) {
        * 于是这个会话下次派活会重新问一遍。
        */
       const offSession = register({
-        path: '/api/v1/child-model/session',
+        path: '/api/v1/model-roster/session',
         methods: ['POST'],
         requestBody: 'buffered',
         fetch: async (request) => {

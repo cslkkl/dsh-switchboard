@@ -1,4 +1,4 @@
-# dsh-child-model — 维护索引
+# dsh-model-roster — 维护索引
 
 ## 全局规则
 
@@ -16,9 +16,9 @@ node --check client.js                     # 客户端语法
 dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 ```
 
-- 宿主改动：`dsh_hot_reload`（`entryId: dsh-child-model`），先 `node --check index.js`。
+- 宿主改动：`dsh_hot_reload`（`entryId: dsh-model-roster`），先 `node --check index.js`。
 - 客户端改动：HMR 自动生效，不必重启。
-- 接口自测：`node tools/probe-http.mjs GET /api/v1/child-model/state`，见 [tools/README.md](tools/README.md)。
+- 接口自测：`node tools/probe-http.mjs GET /api/v1/model-roster/state`，见 [tools/README.md](tools/README.md)。
 - 检查选择：文档改动 → 链接校验 + 换行校验；代码改动 → `node --check` + 对应接口自测。
 
 ## 验证快照

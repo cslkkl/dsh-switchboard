@@ -5,8 +5,8 @@
  * 密钥只在本进程里用，从不打印。
  *
  * 用法：
- *   node tools/probe-http.mjs GET  /api/v1/child-model/state
- *   node tools/probe-http.mjs POST /api/v1/child-model/rules '{"enabled":true}'
+ *   node tools/probe-http.mjs GET  /api/v1/model-roster/state
+ *   node tools/probe-http.mjs POST /api/v1/model-roster/rules '{"enabled":true}'
  */
 import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';

@@ -1,4 +1,4 @@
-# dsh-child-model 架构说明
+# dsh-model-roster 架构说明
 
 本文件记录**不变的设计决策**与**契约**。
 文件级清单与「改哪波及谁」在 [tools/README.md](../tools/README.md)，维护入口在 [AGENTS.md](../AGENTS.md)。
@@ -67,7 +67,7 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 | 来源 | 位置 | 生效方式 |
 |---|---|---|
 | patch | `cordis.patch.yml` 本插件那一行的 `config` | 首次默认值；改动会重建 fiber |
-| 设置文件 | `$DSH_HOME/storages/dsh-child-model/rules.json` | 改动即时生效，不重建 fiber |
+| 设置文件 | `$DSH_HOME/storages/dsh-model-roster/rules.json` | 改动即时生效，不重建 fiber |
 
 字段：
 
@@ -98,7 +98,7 @@ pi-ai 的取值是 `resolveReasoningLevel(model, options.reasoningEffort ?? prof
 
 ## HTTP 契约
 
-界面通过宿主注册的路由读写，全部挂在 `/api/v1/child-model/` 下。
+界面通过宿主注册的路由读写，全部挂在 `/api/v1/model-roster/` 下。
 
 | 方法 | 路径 | 请求 | 说明 |
 |---|---|---|---|
