@@ -128,6 +128,41 @@ window.__ModuleLoader__.load({
       };
     }
 
+    /**
+     * 一个模型：id + 展示名 + 它**自己声明**的推理档位。
+     *
+     * 档位来源是 `reasoning.efforts`（宿主契约，形如 `[{id, name}]`）；同时认
+     * 平铺的 `efforts`，这样宿主半端还没升级序列化时也不会把界面打死。读不到就是
+     * 空数组 = 「该模型不声明档位」，界面据此禁用档位控件，而不是瞎猜一个档位。
+     */
+    function readModel(raw) {
+      if (!isObject(raw)) return null;
+      const id = textOf(raw.id);
+      if (id === '') return null;
+      const reasoning = isObject(raw.reasoning) ? raw.reasoning : null;
+      const source =
+        reasoning !== null && Array.isArray(reasoning.efforts)
+          ? reasoning.efforts
+          : Array.isArray(raw.efforts)
+            ? raw.efforts
+            : [];
+      const efforts = [];
+      for (const item of source) {
+        if (!isObject(item)) continue;
+        const effortId = textOf(item.id);
+        if (effortId === '') continue;
+        const effortName = textOf(item.name);
+        efforts.push({ id: effortId, name: effortName === '' ? effortId : effortName });
+      }
+      const fallbackName = textOf(raw.name);
+      return {
+        id,
+        name: fallbackName === '' ? id : fallbackName,
+        defaultEffort: reasoning === null ? '' : textOf(reasoning.defaultEffort),
+        efforts,
+      };
+    }
+
     /** `routes` 可能为空数组（LLM 服务未就绪），界面按空处理。 */
     function readRoutes(raw) {
       if (!Array.isArray(raw)) return [];
@@ -140,9 +175,7 @@ window.__ModuleLoader__.load({
         out.push({
           id,
           name: textOf(item.name) === '' ? id : textOf(item.name),
-          models: models
-            .filter((model) => isObject(model) && textOf(model.id) !== '')
-            .map((model) => ({ id: textOf(model.id), name: textOf(model.name) === '' ? textOf(model.id) : textOf(model.name) })),
+          models: models.map(readModel).filter((model) => model !== null),
         });
       }
       return out;
@@ -375,6 +408,63 @@ window.__ModuleLoader__.load({
         });
       }
       return options;
+    }
+
+    /** 某个渠道下的某个模型（含它的档位声明）；找不到给 null。 */
+    function modelOf(routes, provider, model) {
+      for (const item of modelsOf(routes, provider)) {
+        if (item.id === model) return item;
+      }
+      return null;
+    }
+
+    /**
+     * 档位下拉里的「自动」项。**不能用空串当值**：`readChoices` 会丢掉空值选项
+     * （那样 provider/模型的空值幽灵项就没法区分），所以这里放一个哨兵值，
+     * 只在本控件内部来回折算 —— 落到 state 与 HTTP 请求体里的仍是空串。
+     */
+    const AUTO_EFFORT = '__auto__';
+
+    function effortSelectValue(effort) {
+      const value = textOf(effort);
+      return value === '' ? AUTO_EFFORT : value;
+    }
+
+    function effortFromSelect(value) {
+      return textOf(value) === AUTO_EFFORT ? '' : textOf(value);
+    }
+
+    /** 档位选项：第一项「自动（由适配器挑）」，其余来自模型自己声明的 efforts。 */
+    function effortChoices(efforts, defaultEffort) {
+      const list = Array.isArray(efforts) ? efforts : [];
+      const fallback = textOf(defaultEffort);
+      const options = [{ value: AUTO_EFFORT, label: '自动（由适配器挑）', hint: '不写死档位' }];
+      for (const effort of list) {
+        const hint = [
+          effort.id === fallback ? '模型默认' : '',
+          effort.name === effort.id ? '' : effort.id,
+        ]
+          .filter((part) => part !== '')
+          .join(' · ');
+        options.push({ value: effort.id, label: effort.name, hint });
+      }
+      return options;
+    }
+
+    /**
+     * 换渠道/模型后旧档位还能不能留。
+     *
+     * 旧值只在「新模型确实声明了它」时保留；新模型不声明档位、或没声明这一档，
+     * 就退回空串（= 交给适配器挑）。一刀切清空会丢用户刚选的档位（AGENTS.md
+     * 明令推理档位必须与路由一起确定），一刀切保留又会把不被支持的档位带到新模型上，
+     * 在适配器那儿硬失败（`UNSUPPORTED_REASONING_EFFORT`）。
+     */
+    function reconcileEffort(routes, provider, model, current) {
+      const value = textOf(current);
+      if (value === '') return '';
+      const found = modelOf(routes, provider, model);
+      if (found === null) return '';
+      return found.efforts.some((effort) => effort.id === value) ? value : '';
     }
 
     /** 模型下拉按当前渠道分组：标题就是渠道名，一眼知道这批模型属于谁。 */
@@ -1019,12 +1109,21 @@ window.__ModuleLoader__.load({
       '.cm-field .cm-input,.cm-field .cm-match{flex:none;width:100%}',
       '.cm-field .mds{width:100%;min-width:0;align-self:stretch}',
       '.cm-fieldLabel{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.cm-fieldHint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
       '.cm-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}',
       '.cm-rules{display:flex;flex-direction:column;gap:8px;min-width:0}',
       '.cm-ruleCard{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);min-width:0}',
       '.cm-ruleTop{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;min-width:0}',
       '.cm-ruleMeta{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}',
       '.cm-ruleMetaHit{color:var(--dsw-alias-label-secondary)}',
+      /* 规则试算：一行输入 + 按钮，下面一行结果。尺寸沿用 .cm-input / .cm-btn，不另起一套。 */
+      '.cm-probe{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}',
+      '.cm-probeInput{flex:1 1 180px}',
+      '.cm-probeResult{margin:0;font-size:12px;line-height:18px;overflow-wrap:anywhere}',
+      '.cm-probeHit{color:var(--dsw-alias-state-success-primary)}',
+      '.cm-probeNone{color:var(--dsw-alias-label-tertiary)}',
+      '.cm-probeErr{color:var(--dsw-alias-state-error-primary)}',
+      '.cm-probeWait{color:var(--dsw-alias-state-warn-label)}',
       '.cm-iconBtn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:26px;height:26px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}',
       '.cm-iconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary)}',
       '.cm-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
@@ -1505,10 +1604,15 @@ window.__ModuleLoader__.load({
         );
       }
 
-      /* 规则行：上排「匹配词 + 模型 + 删除」，下排告出这条规则最近命中了谁。
-         没有这行提示，用户根本看不出一条规则到底作用在哪个成员身上。 */
+      /* 规则行：上排「匹配词 + 渠道 + 模型 + 档位 + 删除」，下排告出这条规则最近命中了谁。
+         没有这行提示，用户根本看不出一条规则到底作用在哪个成员身上。
+         档位（reasoningEffort）必须能在这里编辑：路由和档位是一条命，见 AGENTS.md。 */
       const ruleRows = draft.rules.map((rule, index) => {
         const matched = matchesForRule(recent, rule.match);
+        const ruleModel = modelOf(routes, rule.provider, rule.model);
+        const effortList = ruleModel === null ? [] : ruleModel.efforts;
+        const effortDisabled = rule.provider === '' || rule.model === '' || effortList.length === 0;
+        const line = probeLine(index);
         const metaText =
           rule.match.trim() === ''
             ? '填一个词，队友名或任务描述里含它就会命中'
@@ -1548,10 +1652,11 @@ window.__ModuleLoader__.load({
                 testId: 'provider-select',
                 onChange: (value) => {
                   const models = modelsOf(routes, value);
+                  const model = models.length > 0 ? models[0].id : '';
                   updateRule(index, {
                     provider: value,
-                    model: models.length > 0 ? models[0].id : '',
-                    reasoningEffort: '',
+                    model,
+                    reasoningEffort: reconcileEffort(routes, value, model, rule.reasoningEffort),
                   });
                 },
               }),
@@ -1569,8 +1674,39 @@ window.__ModuleLoader__.load({
                   rule.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
                 ariaLabel: '规则 model',
                 testId: 'model-select',
-                onChange: (value) => updateRule(index, { model: value, reasoningEffort: '' }),
+                onChange: (value) =>
+                  updateRule(index, {
+                    model: value,
+                    reasoningEffort: reconcileEffort(routes, rule.provider, value, rule.reasoningEffort),
+                  }),
               }),
+            ),
+            h(
+              'div',
+              { className: 'cm-field', style: { flex: '0 1 180px' } },
+              h('span', { className: 'cm-fieldLabel' }, '推理档位'),
+              h(ModelSelect, {
+                className: 'cm-effort',
+                /* 值用哨兵折算：ModelSelect 会丢掉空串值的选项，而「自动」落盘必须是空串。 */
+                value: effortSelectValue(rule.reasoningEffort),
+                options: effortChoices(effortList, ruleModel === null ? '' : ruleModel.defaultEffort),
+                placeholder: '自动（由适配器挑）',
+                emptyHint: effortDisabled ? '该模型不声明档位' : '没有可选项',
+                ariaLabel: '规则推理档位',
+                testId: 'effort-select',
+                disabled: effortDisabled,
+                onChange: (value) => updateRule(index, { reasoningEffort: effortFromSelect(value) }),
+              }),
+              /* 禁用的触发器点不开弹层，提示必须留在外面，否则用户只看到灰按钮不知道为什么。 */
+              effortDisabled
+                ? h(
+                    'span',
+                    { className: 'cm-fieldHint' },
+                    rule.provider === '' || rule.model === ''
+                      ? '先选渠道和模型'
+                      : '该模型不声明档位',
+                  )
+                : null,
             ),
             h(
               'button',
