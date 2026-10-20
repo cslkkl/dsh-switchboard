@@ -294,6 +294,8 @@ window.__ModuleLoader__.load({
       const hit = textOf(applied.hit);
       if (hit === '') return '—';
       if (hit === '(default)') return '默认模型';
+      /* 会话层（本对话默认）在宿主里就是一个裸 `session`，不加这条会在界面里露英文。 */
+      if (hit === 'session') return '本对话默认';
       if (hit.startsWith('member:')) return '点名指定';
       if (hit.startsWith('child:')) return '点名指定';
       if (hit === 'hit:name' || hit.startsWith('name:')) {
@@ -1460,6 +1462,10 @@ window.__ModuleLoader__.load({
       const [saving, setSaving] = React.useState(false);
       const [feedback, setFeedback] = React.useState(null);
       const [reloadTick, setReloadTick] = React.useState(0);
+      /* 规则试算：按规则下标存。输入与结果都只影响显示，不写任何配置。
+         增删规则时整体清空——下标会移位，留着旧结果只会张冠李戴。 */
+      const [probeText, setProbeText] = React.useState({});
+      const [probeResult, setProbeResult] = React.useState({});
 
       React.useEffect(() => {
         let alive = true;
@@ -1537,6 +1543,7 @@ window.__ModuleLoader__.load({
                 ]),
               },
         );
+        clearProbes();
       }
 
       function removeRule(index) {
@@ -1545,6 +1552,108 @@ window.__ModuleLoader__.load({
             ? current
             : { ...current, rules: current.rules.filter((_rule, at) => at !== index) },
         );
+        clearProbes();
+      }
+
+      /* ── 规则试算：只读预览，不写配置 ───────────────────────────────── */
+
+      /**
+       * 试算一个输入会命中谁。
+       *
+       * 只读接口，不发 `/rules`；结果只进本地 state。输入同一个词既可能是成员名、也
+       * 可能是任务描述，所以 `name` 与 `label` 都带上同一个词——宿主按 点名 → 名字精确
+       * → 规则（名字精确 / 名字包含 / 描述包含）→ 默认 的顺序解析，两者词干相同，
+       * 命中层不会因为多传一个 label 而改变结论。
+       *
+       * `lead` 在设置卡片里拿不到（卡片没有会话上下文），一律留空：会话层不参与试算，
+       * 结果里也不会出现 `session`。
+       */
+      async function probeRule(index) {
+        const rule = draft === null ? null : draft.rules[index];
+        if (rule === null || rule === undefined) return;
+        const value = textOf(probeText[index]);
+        if (value === '') return;
+        setProbeResult((current) => ({ ...current, [index]: { kind: 'loading' } }));
+        const query =
+          '?lead=&name=' + encodeURIComponent(value) + '&label=' + encodeURIComponent(value);
+        const response = await request(SIMULATE_PATH + query);
+        const payload = response.data;
+        // 端点还没上线（404/501）或形状不对：给「未就绪」提示，不把它当成规则错误。
+        if (response.status === 404 || response.status === 501) {
+          setProbeResult((current) => ({
+            ...current,
+            [index]: { kind: 'unavailable', status: response.status },
+          }));
+          return;
+        }
+        if (!(response.ok && isObject(payload) && payload.ok === true)) {
+          const detail = isObject(payload) ? textOf(payload.error) : '';
+          setProbeResult((current) => ({
+            ...current,
+            [index]: {
+              kind: 'error',
+              text: detail === '' ? 'HTTP ' + String(response.status) : detail,
+            },
+          }));
+          return;
+        }
+        const hit = textOf(payload.hit);
+        const route = readRoute(payload.route);
+        const hitKind = textOf(payload.hitKind);
+        // route 为 null / hitKind 为 none = 会继承 Lead，这是正常结果，不是错误。
+        if (route === null || hitKind === 'none' || hit === '') {
+          setProbeResult((current) => ({ ...current, [index]: { kind: 'none' } }));
+          return;
+        }
+        setProbeResult((current) => ({
+          ...current,
+          [index]: { kind: 'hit', hit, route },
+        }));
+      }
+
+      /** 规则增删后下标会移位，旧试算结果一律作废。 */
+      function clearProbes() {
+        setProbeText({});
+        setProbeResult({});
+      }
+
+      /** 规则试算结果的一行文字 + 颜色类；null = 还没试算过。 */
+      function probeLine(index) {
+        const result = probeResult[index];
+        if (result === undefined) return null;
+        if (result.kind === 'loading') {
+          return { className: 'cm-probeResult cm-probeNone', text: '试算中…' };
+        }
+        if (result.kind === 'unavailable') {
+          return {
+            className: 'cm-probeResult cm-probeWait',
+            text:
+              '试算接口还没上线（HTTP ' +
+              String(result.status) +
+              '），宿主升级后可用；当前配置不受影响',
+          };
+        }
+        if (result.kind === 'error') {
+          return { className: 'cm-probeResult cm-probeErr', text: '试算失败：' + result.text };
+        }
+        if (result.kind === 'none') {
+          return {
+            className: 'cm-probeResult cm-probeNone',
+            text: '不命中任何规则，将继承主 Agent',
+          };
+        }
+        const effort = textOf(result.route.reasoningEffort);
+        return {
+          className: 'cm-probeResult cm-probeHit',
+          text:
+            '命中：' +
+            hitLabel({ hit: result.hit }) +
+            ' → ' +
+            result.route.provider +
+            '/' +
+            result.route.model +
+            (effort === '' ? '' : ' · 档位 ' + effort),
+        };
       }
 
       /**
@@ -1651,14 +1760,21 @@ window.__ModuleLoader__.load({
         setSaving(false);
         if (response.ok && isObject(response.data) && response.data.ok === true) {
           setDraft(draftFrom(readSettings(response.data.settings), routes));
+          /* 回填的规则表会丢掉空行，下标可能整体前移，旧试算结果必须作废，
+             否则「命中的是这条规则」会张冠李戴。 */
+          clearProbes();
+          // 这次提交过的模型记进「最近使用」（只记真提交成功的，浏览不算）。
+          for (const rule of rules) rememberRecentModel(rule.provider, rule.model);
+          if (defaultRoute !== null) rememberRecentModel(defaultRoute.provider, defaultRoute.model);
           setFeedback({ kind: 'ok', text: '已保存，下一次委派生效' });
+          pushToast('ok', '设置已保存，下一次委派生效');
           return;
         }
         const message = isObject(response.data) ? textOf(response.data.error) : '';
-        setFeedback({
-          kind: 'error',
-          text: message === '' ? '保存失败（HTTP ' + String(response.status) + '）' : message,
-        });
+        const detail =
+          message === '' ? '保存失败（HTTP ' + String(response.status) + '）' : message;
+        setFeedback({ kind: 'error', text: detail });
+        pushToast('error', '设置保存失败：' + detail);
       }
 
       function providerOptions(current) {
@@ -1837,6 +1953,47 @@ window.__ModuleLoader__.load({
                   ),
                 ),
           ),
+          /* 试算：把「这条规则会命中谁」提前问出来，冷启动也有答案（最近委派表那时候还是空的）。
+             只在用户回车或点按钮时发请求，不做任何自动预取。 */
+          h(
+            'div',
+            { className: 'cm-probe' },
+            h('input', {
+              type: 'text',
+              className: 'cm-input cm-probeInput',
+              value: probeText[index] === undefined ? '' : probeText[index],
+              placeholder: '输入成员名或任务描述试算',
+              'aria-label': '试算输入',
+              onChange: (event) => {
+                const value = event.target.value;
+                setProbeText((current) => ({ ...current, [index]: value }));
+              },
+              onKeyDown: (event) => {
+                if (!isObject(event) || event.key !== 'Enter') return;
+                event.preventDefault();
+                void probeRule(index);
+              },
+            }),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cm-btn',
+                title: '按已保存的配置试算：还没保存的规则改动不会体现在结果里',
+                disabled: textOf(probeText[index]) === '',
+                onClick: () => {
+                  void probeRule(index);
+                },
+              },
+              probeResult[index] !== undefined && probeResult[index].kind === 'loading'
+                ? '试算中…'
+                : '试算',
+            ),
+          ),
+          /* 没有结果就不占位；失败也只是加一行，不动上面已有的规则内容。 */
+          line === null
+            ? null
+            : h('p', { className: line.className, role: 'status' }, line.text),
         );
       });
 
