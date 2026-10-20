@@ -480,6 +480,44 @@ window.__ModuleLoader__.load({
             ? [{ label: '', options: flatOptions }]
             : [];
 
+      /* 量「最宽选项」的长度，用来决定弹层宽度。
+         写死宽度必然在某些机器上截断：渠道名与 provider id 由运行环境决定。
+         无 document 或异常时返回 0，调用方退回固定下限。 */
+      function measureWidestOption() {
+        if (typeof document === 'undefined') return 0;
+        const entries = [];
+        for (const group of groups) {
+          for (const option of group.options) {
+            entries.push({ label: option.label, hint: option.hint });
+          }
+        }
+        if (entries.length === 0) return 0;
+        try {
+          const probe = document.createElement('div');
+          probe.style.cssText =
+            'position:absolute;left:-9999px;top:-9999px;visibility:hidden;display:flex;align-items:center;gap:6px;padding:0 6px;font-size:13px;line-height:18px;white-space:nowrap';
+          const labelEl = document.createElement('span');
+          const hintEl = document.createElement('span');
+          hintEl.style.cssText =
+            'font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace';
+          probe.appendChild(labelEl);
+          probe.appendChild(hintEl);
+          document.body.appendChild(probe);
+          let widest = 0;
+          for (const entry of entries) {
+            labelEl.textContent = entry.label === undefined ? '' : String(entry.label);
+            hintEl.textContent = entry.hint === undefined ? '' : String(entry.hint);
+            const width = probe.getBoundingClientRect().width;
+            if (width > widest) widest = width;
+          }
+          probe.remove();
+          // 加上勾选列（12）、弹层内边距（4*2）与左右留白。
+          return Math.ceil(widest) + 12 + 8 + 10;
+        } catch {
+          return 0;
+        }
+      }
+
       // 当前值不在目录里也要看得见：补一条带「当前不可用」提示的幽灵项。
       let allValues = [];
       for (const group of groups) for (const option of group.options) allValues.push(option.value);
@@ -555,7 +593,12 @@ window.__ModuleLoader__.load({
            这里给一个宽松的区间：至少 240，最多 380，且不超过视口。
            触发器更宽时（例如整行下拉）才跟着变宽。 */
         const viewportCap = Math.max(200, window.innerWidth - 16);
-        const width = Math.min(viewportCap, Math.min(380, Math.max(240, box.width)));
+        /* 先按**实测内容**算，再夹到合理区间。
+           跟着触发器走会截断（触发器常只有 150–180px）；只给固定下限也会截断
+           （「CPA Switch · WorkBuddy」+ `cpa-workbuddy` 实测要 251px）。
+           量不到内容时才退回 240 下限。 */
+        const wanted = Math.max(240, box.width, measureWidestOption());
+        const width = Math.min(viewportCap, Math.min(380, wanted));
         const left = Math.min(Math.max(8, box.left), Math.max(8, window.innerWidth - width - 8));
         const below = window.innerHeight - box.bottom - 8;
         const above = box.top - 8;
@@ -1424,80 +1467,7 @@ window.__ModuleLoader__.load({
         return modelChoiceGroups(routes, provider);
       }
 
-      /* ── 本对话默认：一次选好，这个对话里派活都按它，不再询问 ─────────── */
 
-      /** 合并成「渠道 + 模型」的下拉项，第一项是「继承主 Agent」（值空串）。 */
-      function sessionOptions() {
-        const options = [
-          { value: '', label: '继承主 Agent', hint: '不干预，用我当前的模型' },
-        ];
-        for (const route of routes) {
-          for (const model of modelsOf(routes, route.id)) {
-            options.push({
-              value: route.id + '|' + model.id,
-              label: model.name || model.id,
-              hint: route.name === route.id ? route.id : route.name,
-            });
-          }
-        }
-        return options;
-      }
-
-      function sessionValue() {
-        if (sessionDefault === null) return '';
-        if (sessionDefault.provider === '' || sessionDefault.model === '') return '';
-        return sessionDefault.provider + '|' + sessionDefault.model;
-      }
-
-      /**
-       * 写「本对话默认」。选「继承」= 提交 `route: null`，宿主会连「已问过」标记
-       * 一起清掉 —— 于是下次派活又会问一遍（这是用户主动要求的重置语义）。
-       */
-      async function chooseSessionDefault(value) {
-        if (busy !== '') return;
-        let body = { lead, route: null };
-        if (value !== '') {
-          const at = value.indexOf('|');
-          if (at <= 0) return;
-          const provider = value.slice(0, at);
-          const model = value.slice(at + 1);
-          if (provider === '' || model === '') return;
-          body = { lead, route: { provider, model } };
-        }
-        setBusy('session');
-        const response = await request(SESSION_PATH, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        setBusy('');
-        const payload = response.data;
-        if (!(response.ok && isObject(payload) && payload.ok === true)) {
-          const detail = isObject(payload) ? textOf(payload.error) : '';
-          setNotice({
-            kind: 'error',
-            text: detail === '' ? '保存失败（HTTP ' + String(response.status) + '）' : detail,
-          });
-          return;
-        }
-        const route = isObject(payload.sessionRoute) ? payload.sessionRoute : null;
-        setSessionDefault(
-          route === null
-            ? null
-            : {
-                provider: textOf(route.provider),
-                model: textOf(route.model),
-                reasoningEffort: textOf(route.reasoningEffort),
-              },
-        );
-        setNotice({
-          kind: 'ok',
-          text:
-            route === null
-              ? '已改为继承主 Agent，取消了这个对话的默认'
-              : '本对话默认已设定，之后派活不再询问',
-        });
-      }
 
       if (phase === 'error') {
         return h(
@@ -2157,6 +2127,81 @@ window.__ModuleLoader__.load({
         setNotice({
           kind: 'ok',
           text: applied.length === 0 ? '已保存，下次唤醒该成员时生效（不需要重启）' : '已生效',
+        });
+      }
+
+      /* ── 本对话默认：一次选好，这个对话里派活都按它，不再询问 ─────────── */
+
+      /** 合并成「渠道 + 模型」的下拉项，第一项是「继承主 Agent」（值空串）。 */
+      function sessionOptions() {
+        const options = [
+          { value: '', label: '继承主 Agent', hint: '不干预，用我当前的模型' },
+        ];
+        for (const route of routes) {
+          for (const model of modelsOf(routes, route.id)) {
+            options.push({
+              value: route.id + '|' + model.id,
+              label: model.name || model.id,
+              hint: route.name === route.id ? route.id : route.name,
+            });
+          }
+        }
+        return options;
+      }
+
+      function sessionValue() {
+        if (sessionDefault === null) return '';
+        if (sessionDefault.provider === '' || sessionDefault.model === '') return '';
+        return sessionDefault.provider + '|' + sessionDefault.model;
+      }
+
+      /**
+       * 写「本对话默认」。选「继承」= 提交 `route: null`，宿主会连「已问过」标记
+       * 一起清掉 —— 于是下次派活又会问一遍（这是重置语义）。
+       */
+      async function chooseSessionDefault(value) {
+        if (busy !== '') return;
+        let body = { lead, route: null };
+        if (value !== '') {
+          const at = value.indexOf('|');
+          if (at <= 0) return;
+          const provider = value.slice(0, at);
+          const model = value.slice(at + 1);
+          if (provider === '' || model === '') return;
+          body = { lead, route: { provider, model } };
+        }
+        setBusy('session');
+        const response = await request(SESSION_PATH, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        setBusy('');
+        const payload = response.data;
+        if (!(response.ok && isObject(payload) && payload.ok === true)) {
+          const detail = isObject(payload) ? textOf(payload.error) : '';
+          setNotice({
+            kind: 'error',
+            text: detail === '' ? '保存失败（HTTP ' + String(response.status) + '）' : detail,
+          });
+          return;
+        }
+        const route = isObject(payload.sessionRoute) ? payload.sessionRoute : null;
+        setSessionDefault(
+          route === null
+            ? null
+            : {
+                provider: textOf(route.provider),
+                model: textOf(route.model),
+                reasoningEffort: textOf(route.reasoningEffort),
+              },
+        );
+        setNotice({
+          kind: 'ok',
+          text:
+            route === null
+              ? '已改为继承主 Agent，取消了这个对话的默认'
+              : '本对话默认已设定，之后派活不再询问',
         });
       }
 
