@@ -45,6 +45,17 @@ export const name = 'dsh-switchboard';
 /** 子 Agent 覆盖用的默认最大深度：只作用于直接子代，避免深层嵌套被意外改写。 */
 const DEFAULT_MAX_DEPTH = 1;
 
+/**
+ * `maxDepth` 的下界校验（>= 0）。
+ *
+ * 生效判断是 `depth > settings.maxDepth`（见下面 `agent/created`）。填 `-1` 时
+ * 该条件对任何子代（`delegationDepth >= 0`）都成立，于是**全部子代在解析前就被
+ * 跳过**，症状是「插件像没装」。负数一律当非法值丢弃，回落到下一个来源。
+ */
+function asMaxDepth(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
 function dshHome() {
   const override = (process.env.DSH_HOME ?? '').trim();
   return override === '' ? join(homedir(), '.dsh') : override;
@@ -306,11 +317,7 @@ function effectiveSettings(config) {
   /* 已经问过的会话（值=时间戳字符串）。**不能用 normalizeMembers 处理** ——
      它要求值是路由对象，时间戳会被当成非法值丢掉，于是每个会话被反复追问。 */
   const asked = normalizeAsked(file.asked);
-  const maxDepth = Number.isSafeInteger(file.maxDepth)
-    ? file.maxDepth
-    : Number.isSafeInteger(patch.maxDepth)
-      ? patch.maxDepth
-      : DEFAULT_MAX_DEPTH;
+  const maxDepth = asMaxDepth(file.maxDepth) ?? asMaxDepth(patch.maxDepth) ?? DEFAULT_MAX_DEPTH;
   const applyToFork = typeof file.applyToFork === 'boolean' ? file.applyToFork : patch.applyToFork === true;
   const askOnFirst = typeof file.askOnFirst === 'boolean' ? file.askOnFirst : patch.askOnFirst !== false;
   return { enabled, rules, members, sessions, asked, defaultRoute, maxDepth, applyToFork, askOnFirst };
@@ -1102,8 +1109,9 @@ export function apply(ctx, config) {
         label,
         parentSessionId: header.parentSession,
       });
-      // 直接子代才问「本对话用什么模型」；更深的层跟着上层走。
-      const leadId = depth === 1 ? header.parentSession : header.parentSession;
+      // 「本对话默认」按 Lead 会话（= 本子代的父会话）存；任何深度都用同一个父会话 id
+      // 取它，所以这里不需要按 depth 分支（原写法两个分支相同）。
+      const leadId = header.parentSession;
       const route = resolveRoute(settings, { memberName, label, childId: agent.id, leadId });
 
       if (route === undefined) {
