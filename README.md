@@ -72,9 +72,9 @@ dsh plugin --profile web add "<本插件目录>"
 
 <div align="center">
 
-![成员模型面板](docs/panel-dropdown-full.png)
+![设置卡片](docs/settings-card.png)
 
-<sub>点开「模型」：本对话默认、批量切换、新建成员、成员状态一屏可见</sub>
+<sub>插件详情页的规则卡片：每条规则显示匹配词、目标模型，以及最近命中的成员</sub>
 
 </div>
 
@@ -88,13 +88,17 @@ dsh plugin --profile web add "<本插件目录>"
 <details>
 <summary>更多截图</summary>
 
-![设置卡片](docs/settings-after.png)
+<div align="center">
 
-<sub>规则卡片显示「最近命中」谁，一眼看出这条规则作用在哪个成员身上</sub>
+![模型下拉](docs/dropdown-width.png)
 
-![首次询问](docs/first-ask.png)
+<sub>渠道下拉按内容自适应宽度，长渠道名不截断</sub>
+
+![首次询问](docs/first-ask-card.png)
 
 <sub>一个对话里第一次派活时问一次，选完就是本对话默认</sub>
+
+</div>
 
 </details>
 
