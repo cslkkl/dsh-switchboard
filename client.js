@@ -811,10 +811,33 @@ window.__ModuleLoader__.load({
       // 当前值不在目录里也要看得见：补一条带「当前不可用」提示的幽灵项。
       let allValues = [];
       for (const group of groups) for (const option of group.options) allValues.push(option.value);
+
+      /* 「最近使用」组：只在调用方声明了 `recent.provider` 的**模型**下拉里出现
+         （渠道下拉、以及会话默认那种 `provider|model` 复合值都不传）。
+         只收当前渠道下**仍存在**的模型 —— 渠道下线/模型下架的直接跳过，不显示幽灵项。 */
+      const recentProvider = isObject(p.recent) ? textOf(p.recent.provider) : '';
+      let recentOptions = [];
+      if (recentProvider !== '') {
+        for (const entry of readRecentModels()) {
+          if (entry.provider !== recentProvider) continue;
+          for (const group of groups) {
+            for (const option of group.options) {
+              if (option.value === entry.model && recentOptions.indexOf(option) < 0) {
+                recentOptions.push(option);
+              }
+            }
+          }
+          if (recentOptions.length >= RECENT_LIMIT) break;
+        }
+      }
+
+      const beforeGhost = recentOptions.length === 0
+        ? groups
+        : [{ label: '最近使用', options: recentOptions }].concat(groups);
       const view =
         value !== '' && allValues.indexOf(value) < 0
-          ? [{ label: '', options: [{ value, label: value, hint: '当前不可用' }] }].concat(groups)
-          : groups;
+          ? [{ label: '', options: [{ value, label: value, hint: '当前不可用' }] }].concat(beforeGhost)
+          : beforeGhost;
 
       const [open, setOpen] = React.useState(false);
       const [query, setQuery] = React.useState('');
@@ -848,7 +871,8 @@ window.__ModuleLoader__.load({
       for (const group of filtered) for (const option of group.options) flat.push(option);
       let total = 0;
       for (const group of view) total += group.options.length;
-      const showSearch = total >= 8;
+      /* 搜索框常驻：只要有可选项就给搜索（以前是 >=8，渠道/模型一多就只能翻）。 */
+      const showSearch = total >= 1;
 
       let current = null;
       for (const group of view) {
@@ -892,8 +916,17 @@ window.__ModuleLoader__.load({
         const left = Math.min(Math.max(8, box.left), Math.max(8, window.innerWidth - width - 8));
         const below = window.innerHeight - box.bottom - 8;
         const above = box.top - 8;
-        const up = below < 200 && above > below;
-        const maxHeight = Math.max(120, Math.min(260, up ? above : below));
+        /* 高度策略（搜索框常驻之后重算的）：
+           - `floor` 是「搜索框 + 两行选项 + 内边距」才够用的高度，用来决定**翻上还是翻下**；
+           - `cap` 是理想上限；
+           - 最终高度永远不超过真实可用空间，绝不为了凑数顶出视口。
+           弹层内是纵向 flex：搜索框 flex:none、列表 flex 且 overflow-y:auto，
+           所以列表只会滚动，不会因为搜索框而塌成 0（另：绝不给 .mds-panel 加 contain:size）。 */
+        const floor = showSearch ? 168 : 120;
+        const cap = showSearch ? 280 : 260;
+        const up = below < floor && above > below;
+        const avail = Math.max(0, up ? above : below);
+        const maxHeight = Math.max(48, Math.min(cap, avail));
         setRect({ up, width, left, top: box.bottom + 4, bottom: window.innerHeight - box.top + 4, maxHeight });
       }
 
@@ -1060,7 +1093,9 @@ window.__ModuleLoader__.load({
               {
                 type: 'button',
                 role: 'option',
-                key: 'option:' + option.value,
+                /* 带组序：同一个模型可能同时出现在「最近使用」和它自己的渠道组里，
+                   只用 value 当 key 会撞 React key。 */
+                key: 'option:' + String(gi) + ':' + option.value,
                 id: baseId + '-opt-' + String(at),
                 className: [
                   'mds-option',
@@ -1509,7 +1544,9 @@ window.__ModuleLoader__.load({
       '.mds-search{box-sizing:border-box;width:100%;height:28px;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}',
       '.mds-search::placeholder{color:var(--dsw-alias-label-tertiary)}',
       '.mds-search:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary)}',
-      '.mds-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;padding-bottom:2px}',
+      '.mds-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;padding-bottom:2px;flex:1 1 auto}',
+      /* 搜索框常驻后「别把列表挤没」靠这两条：搜索框 flex:none（固定约 34px），列表可收缩可滚动。
+         绝不要给 .mds-panel 加 `contain:size`：那会让弹层高度塌成 0，只剩搜索框一条缝。 */
       '.mds-groupTitle{padding:8px 6px 4px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
       '.mds-option{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;height:30px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}',
       '.mds-option:hover,.mds-optionActive{background:var(--dsw-alias-interactive-bg-hover)}',
