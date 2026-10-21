@@ -32,7 +32,7 @@ CI：`.github/workflows/check.yml`，每次推送与 PR 跑语法、样式自检
 以下为 2026-10-20 / 2026-10-21 命令级 + 真实实例实测：
 
 - `node --check index.js`、`node --check client.js` 均 exit 0。
-- 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1576 行、客户端 `client.js` 4103 行。
+- 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1701 行、客户端 `client.js` 4453 行。
 - `GET /state` 200：带 `lastErrors`（当前 0 条），`routes[].models[].reasoning` 形状正确
   （例 `cpa-workbuddy/wb/deepseek-v4.1-flash` → `{defaultEffort:"high", efforts:[off,high]}`）。
 - `/simulate` 三种命中：`?name=cheap-worker` → `hitKind:"member"`；`?name=cheap-zzz` →
@@ -51,11 +51,16 @@ CI：`.github/workflows/check.yml`，每次推送与 PR 跑语法、样式自检
   面板 460px、head 固定不滚、body 独立滚动（scrollH 756 / clientH 404）；
   批量条与新建表单的三档各 204px 且无截断；键盘模态焦点环实测 `2px solid` 品牌色、offset 2px；
   toast 亮色 `#353638` / 暗色 `#43454a` 深底浅字。
+- 面板信息架构重做（2026-10-21）：分「本对话默认 / 批量设置 / 成员」三区，各带标题；
+  渠道 / 模型 / 推理档位三个下拉各有可见标签，批量条实测各 213px、编辑器 207px+421px 跨行。
+- 下拉宽度探测：改用已渲染选项的 `getComputedStyle`（原先硬编码 `line-height:18px` 与实际差 17px，
+  导致弹层宽 264px、内容实需 285px，标签被截断）；实测修后宽 334px、9 个选项无一截断。
+  宽度按选项集指纹缓存，滚动时 `getBoundingClientRect` 调用从 1+N 次降到 2 次。
 - `node tools/check-css-usage.mjs` exit 0：74 个类，0 死规则、0 未定义类。
 
 ## 待办
 
-- [ ] 拆 `client.js`（4103 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
+- [ ] 拆 `client.js`（4453 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
 - [ ] L3 工具链（ESLint / Prettier / pre-commit）尚未接入；当前零依赖无 lint 配置。CI 已接入，只跑既有校验脚本。
 - [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库；该目录已排除出版本库，本机仍保留）。
 
