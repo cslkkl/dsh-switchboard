@@ -75,6 +75,16 @@ window.__ModuleLoader__.load({
     const RECENT_LIMIT = 5;
     const RECENT_SEP = '\u0000';
 
+    /* 下拉弹层宽度的缓存：宽度只取决于选项集内容，与滚动位置无关。
+       放在模块级而不是组件内 —— 组件每次渲染都会重建，缓存就失效了。
+       键是选项集的指纹（长度前缀编码），内容变了自然失效。 */
+    const widestCache = { key: '', value: 0 };
+
+    /* 当前打开的弹层 id。宽度探测要读已渲染选项的计算样式，
+       但探测函数定义在 baseId 声明之前，直接引用会撞 TDZ。
+       用模块级变量中转：渲染时登记，探测时读取。 */
+    let openPanelId = '';
+
     /* ── 取数：所有失败都收敛成 {ok:false, status, data}，从不抛 ─────────────── */
 
     async function request(path, init) {
@@ -782,16 +792,43 @@ window.__ModuleLoader__.load({
           }
         }
         if (entries.length === 0) return 0;
+        /* 指纹只取「标签 + 提示」：这两项决定文字宽度，
+           选项的 value 变了但显示文字没变，宽度就不变。 */
+        const key = entries
+          .map((entry) => {
+            const label = textOf(entry.label);
+            const hint = textOf(entry.hint);
+            return `${label.length}:${label}${hint.length}:${hint}`;
+          })
+          .join('');
+        if (key === widestCache.key) return widestCache.value;
         try {
+          /* 探测要用**真实选项的计算样式**，不能另写一套近似的字号/行高。
+             之前硬编码 `font-size:13px;line-height:18px`，与 `.mds-optionLabel` 的实际
+             line-height 不一致，量出来的宽度偏窄约 17px，弹层跟着变窄、长标签被截断。
+             这里从已渲染的选项上取计算样式，字体/字号/行高永远跟着 CSS 走。 */
+          const panel = typeof document === 'undefined' ? null : document.getElementById(openPanelId);
+          const sample = panel ? panel.querySelector('.mds-option') : null;
+          const sampleLabel = sample ? sample.querySelector('.mds-optionLabel') : null;
+          const sampleHint = sample ? sample.querySelector('.mds-optionHint') : null;
+          const styleOf = (el, fallback) => {
+            if (!el || typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+              return fallback;
+            }
+            const cs = window.getComputedStyle(el);
+            return `${cs.fontSize};font-family:${cs.fontFamily};line-height:${cs.lineHeight}`;
+          };
+          /* 拿不到样例时不写缓存：首次打开时弹层可能还没挂载，
+             这时算出来的 fallback 宽度会偏窄，缓存住就再也纠正不回来。
+             下一次 measure（面板已渲染）会重算并覆盖。 */
+          const hasSample = sampleLabel !== null && sampleHint !== null;
           const probe = document.createElement('div');
           probe.style.cssText =
-            'position:absolute;left:-9999px;top:-9999px;visibility:hidden;display:flex;align-items:center;gap:6px;padding:0 6px;font-size:13px;line-height:18px;white-space:nowrap';
+            'position:absolute;left:-9999px;top:-9999px;visibility:hidden;display:flex;align-items:center;gap:6px;padding:0 6px;white-space:nowrap';
           const labelEl = document.createElement('span');
           const hintEl = document.createElement('span');
-          /* 这里的字号/行高必须与 `.mds-optionHint` 的 CSS 完全一致，
-             否则量出来的宽度偏窄、弹层又回到截断状态。 */
-          hintEl.style.cssText =
-            'font-size:12px;line-height:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace';
+          labelEl.style.cssText = styleOf(sampleLabel, 'font-size:13px;line-height:18px');
+          hintEl.style.cssText = styleOf(sampleHint, 'font-size:12px;line-height:16px');
           probe.appendChild(labelEl);
           probe.appendChild(hintEl);
           document.body.appendChild(probe);
@@ -804,7 +841,12 @@ window.__ModuleLoader__.load({
           }
           probe.remove();
           // 加上勾选列（12）、弹层内边距（4*2）与左右留白。
-          return Math.ceil(widest) + 12 + 8 + 10;
+          const value = Math.ceil(widest) + 12 + 8 + 10;
+          if (hasSample) {
+            widestCache.key = key;
+            widestCache.value = value;
+          }
+          return value;
         } catch {
           return 0;
         }
@@ -855,6 +897,9 @@ window.__ModuleLoader__.load({
         idRef.current = 'mds-' + String(selectSeq);
       }
       const baseId = idRef.current;
+      /* 登记弹层 id，供宽度探测读取已渲染选项的计算样式。
+         探测函数定义在 baseId 声明之前，不能直接引用它（TDZ）。 */
+      if (open) openPanelId = baseId + '-panel';
 
       const needle = query.trim().toLowerCase();
       const filtered = [];
@@ -1137,8 +1182,7 @@ window.__ModuleLoader__.load({
               style: panelStyle,
               'aria-label': ariaLabel === '' ? undefined : ariaLabel,
               onKeyDown,
-            },
-            showSearch
+            },            showSearch
               ? h(
                   'div',
                   { className: 'mds-searchWrap' },
