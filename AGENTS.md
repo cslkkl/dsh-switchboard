@@ -20,14 +20,15 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 - 宿主改动：`dsh_hot_reload`（`entryId: dsh-switchboard`），先 `node --check index.js`。
 - 客户端改动：HMR 自动生效，不必重启。
 - 接口自测：`node tools/probe-http.mjs GET /api/v1/switchboard/state`，见 [tools/README.md](tools/README.md)。
-- 检查选择：文档改动 → 链接校验 + 换行校验；代码改动 → `node --check` + 对应接口自测。
+- 样式自检：`node tools/check-css-usage.mjs`（死规则 / 未定义类，见 [tools/README.md](tools/README.md)）。
+- 检查选择：文档改动 → 链接校验 + 换行校验；代码改动 → `node --check` + 对应接口自测；样式改动 → 外加 `check-css-usage`。
 
 ## 验证快照
 
-无 CI。以下为 2026-10-20 命令级 + 真实实例实测：
+无 CI。以下为 2026-10-20 / 2026-10-21 命令级 + 真实实例实测：
 
 - `node --check index.js`、`node --check client.js` 均 exit 0。
-- 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1701 行、客户端 `client.js` 3862 行。
+- 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1576 行、客户端 `client.js` 4103 行。
 - `GET /state` 200：带 `lastErrors`（当前 0 条），`routes[].models[].reasoning` 形状正确
   （例 `cpa-workbuddy/wb/deepseek-v4.1-flash` → `{defaultEffort:"high", efforts:[off,high]}`）。
 - `/simulate` 三种命中：`?name=cheap-worker` → `hitKind:"member"`；`?name=cheap-zzz` →
@@ -41,10 +42,16 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
   本轮全程 `rules.json` 只读，三条数据未变。
 - 换模型已在真实实例验证：`inherited wb/…` → `applied cpa-trae/trae/…`，探针记 `hit: member:<名>`。
 - 本对话默认已验证：`hit: "session"`，且第二次派活记 `ask-skip: already-asked`。
+- 客户端视觉改造（2026-10-21）在真实实例上量过：卡片边框 `.5px`、圆角 16/12/8、标题 14px/500；
+  头部「模型」按钮与兄弟按钮同为 28px 高、y 与 bottom 完全一致、图标 14px；
+  面板 460px、head 固定不滚、body 独立滚动（scrollH 756 / clientH 404）；
+  批量条与新建表单的三档各 204px 且无截断；键盘模态焦点环实测 `2px solid` 品牌色、offset 2px；
+  toast 亮色 `#353638` / 暗色 `#43454a` 深底浅字。
+- `node tools/check-css-usage.mjs` exit 0：74 个类，0 死规则、0 未定义类。
 
 ## 待办
 
-- [ ] 拆 `client.js`（3862 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
+- [ ] 拆 `client.js`（4103 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
 - [ ] L3 工具链（ESLint / Prettier / pre-commit / CI）尚未接入；当前零依赖无 lint 配置。
 - [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库）。
 - [ ] 链接校验脚本待固化：目前靠一次性临时脚本（校验相对路径 + 手写 `#anchor` 对标题 slug），未进 `tools/`。固化成 `tools/check-links.mjs` 要连带更新 [tools/README.md](tools/README.md) 与上方「常用命令」（[tools/AGENTS.md](tools/AGENTS.md) 的硬要求），是独立一条工作。
@@ -55,6 +62,11 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 - `client-modules` 把「这一行有没有 client 包」按 `sourceKey` 缓存，**判空后永不重试**：装/卸插件与宿主启动撞车会让本插件从浏览器清单消失，唯一解法是再重启一次。见 [依据记录](.agents/notes/client-modules-cache.md)。
 - 客户端半端的清单问题症状：`/plugins/??` 里没有本包、`__DSH_BOOT__.entries` 也没有，但宿主端点照常 200。
 - `client.js` 里给下拉弹层加 `contain: size` 会让弹层高度塌成 0，只剩一条搜索框的缝。
+- `--dsw-focus-ring-color` **只在 `html[data-input-modality=pointer]` 下被定义**，键盘模态下为空：
+  写焦点环必须带 `var(..., var(--dsw-alias-state-business-primary))` 回退，否则键盘用户看不到焦点。
+  见 [决策记录](.agents/notes/2026-10-21-client-visual-tokens.md)。
+- 插件自己的样式值一律用宿主 token（`--dsw-radius-*`、`--dsw-alias-*`、`--dsh-frame-overlay-top`），
+  不要回头写 `1px` / 自定圆角 / 写死阴影 —— 首轮视觉评审全是这类问题。同上决策记录。
 
 ## 文档地图
 
