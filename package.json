@@ -1,9 +1,26 @@
 {
   "name": "dsh-switchboard",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "DeepSeek Harness 插件：给子智能体和智能体团队队友逐个指定模型，点一下就换。",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cslkkl/dsh-switchboard.git"
+  },
+  "homepage": "https://github.com/cslkkl/dsh-switchboard#readme",
+  "bugs": {
+    "url": "https://github.com/cslkkl/dsh-switchboard/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "subagent",
+    "agent-teams",
+    "model-routing",
+    "llm"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

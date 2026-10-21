@@ -7,7 +7,7 @@
 主 Agent 用一个模型，派出去的活换一个：贵的活给强模型，琐碎的活给便宜的
 
 [![License](https://img.shields.io/badge/license-MIT-2563eb?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat-square)](.node-version)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square)](.node-version)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-339933?style=flat-square)](package-lock.json)
 [![Platform](https://img.shields.io/badge/platform-DSH%20Web-111827?style=flat-square)](docs/ARCHITECTURE.md)
 
