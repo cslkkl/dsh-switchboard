@@ -2367,17 +2367,24 @@ window.__ModuleLoader__.load({
             ),
             h('div', { className: 'cm-summary' }, summaryText()),
           ),
+          /* 宿主插件页的页头已经有一个「启用」开关，本卡片再放一个纯开关会认不出谁是谁。
+             这里给它配可见文字标签，让「这个开关管的是模型路由」一眼可读。 */
           h(
-            'button',
-            {
-              type: 'button',
-              className: 'cm-switchTrack',
-              role: 'switch',
-              'aria-checked': draft.enabled,
-              'aria-label': '启用子智能体模型路由',
-              onClick: () => patchDraft({ enabled: !draft.enabled }),
-            },
-            h('span', { className: 'cm-switchKnob' }),
+            'div',
+            { className: 'cm-switchBox' },
+            h('span', { className: 'cm-switchLabel' }, draft.enabled ? '模型路由已启用' : '模型路由已停用'),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'cm-switchTrack',
+                role: 'switch',
+                'aria-checked': draft.enabled,
+                'aria-label': '启用子智能体模型路由',
+                onClick: () => patchDraft({ enabled: !draft.enabled }),
+              },
+              h('span', { className: 'cm-switchKnob' }),
+            ),
           ),
         ),
 
@@ -2417,7 +2424,7 @@ window.__ModuleLoader__.load({
             ? h(
                 'div',
                 { className: 'cm-hint' },
-                '档位留空 = 由宿主自动挑一个该模型支持的档位。',
+                '默认模型不带档位：由宿主按该模型支持的档位自动挑。',
               )
             : null,
         ),
@@ -2734,15 +2741,18 @@ window.__ModuleLoader__.load({
             return;
           }
           const rect = trigger.getBoundingClientRect();
-          const width = Math.min(360, Math.max(260, window.innerWidth - 24));
+          /* 420~460：面板里有一条「渠道 / 模型 / 档位」三档并排的批量行，
+             360px 时服务下拉只剩 99px，`cpa-workbuddy` 会被截掉。 */
+          const width = Math.min(460, Math.max(300, window.innerWidth - 24));
           const left = Math.max(
             12,
             Math.min(rect.right - width, window.innerWidth - width - 12),
           );
           const below = window.innerHeight - rect.bottom - 12;
           const above = rect.top - 12;
-          const up = below < 220 && above > below;
-          const maxHeight = Math.max(160, Math.min(360, up ? above : below));
+          const up = below < 240 && above > below;
+          /* 头部固定不滚，可视高度全部留给内容，所以上限放到 520（原先 360 太紧）。 */
+          const maxHeight = Math.max(200, Math.min(520, up ? above : below));
           const top = up ? Math.max(12, rect.top - 6 - maxHeight) : rect.bottom + 6;
           setAnchor({ top, left, width, maxHeight });
         };
@@ -3455,15 +3465,16 @@ window.__ModuleLoader__.load({
       function renderBulkBar() {
         const route = bulkRoute();
         const canApply = route !== null && !bulkBusy && members.length > 0;
+        const bulkModel = modelOf(routes, bulk.provider, bulk.model);
+        const bulkEfforts = bulkModel === null ? [] : bulkModel.efforts;
         return h(
           'div',
           { className: 'cmp-bulk' },
+          /* 2×2 网格：渠道 / 模型 一行，档位 / 按钮 一行。档位和路由必须一起选，见 AGENTS.md。 */
           h(
             'div',
             { className: 'cmp-bulkRow' },
-            h('span', { className: 'cmp-bulkLabel' }, '全部换成'),
             h(ModelSelect, {
-              className: 'cmp-provider',
               value: bulk.provider,
               options: providerChoiceList(routes),
               placeholder: '渠道',
@@ -3481,7 +3492,6 @@ window.__ModuleLoader__.load({
               },
             }),
             h(ModelSelect, {
-              className: 'cmp-modelSel',
               value: bulk.model,
               groups: modelChoiceGroups(routes, bulk.provider),
               placeholder: '模型',
@@ -3491,51 +3501,57 @@ window.__ModuleLoader__.load({
               disabled: bulkBusy,
               onChange: (value) => patchBulk({ model: value, effort: '' }),
             }),
-            h('input', {
-              type: 'text',
-              className: 'cmp-input cmp-effort',
-              value: bulk.effort,
-              placeholder: '档位（可选）',
-              'aria-label': '批量的推理档位',
-              disabled: bulkBusy,
-              onChange: (event) => patchBulk({ effort: event.target.value }),
+            h(ModelSelect, {
+              /* 哨兵折算同规则行：ModelSelect 丢空串选项，「自动」落盘必须是空串。 */
+              value: effortSelectValue(bulk.effort),
+              options: effortChoices(bulkEfforts, bulkModel === null ? '' : bulkModel.defaultEffort),
+              placeholder: '档位（自动）',
+              emptyHint: bulkEfforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+              ariaLabel: '批量的推理档位',
+              testId: 'effort-select',
+              disabled: bulkBusy || bulkEfforts.length === 0,
+              onChange: (value) => patchBulk({ effort: effortFromSelect(value) }),
             }),
             h(
-              'button',
-              {
-                type: 'button',
-                className: 'cmp-btn cmp-btnPrimary',
-                disabled: !canApply,
-                onClick: () => {
-                  const picked = bulkRoute();
-                  if (picked === null) return;
-                  askBulk(picked);
+              'div',
+              { className: 'cmp-bulkActions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'cmp-btn cmp-btnPrimary',
+                  disabled: !canApply,
+                  onClick: () => {
+                    const picked = bulkRoute();
+                    if (picked === null) return;
+                    askBulk(picked);
+                  },
                 },
-              },
-              bulkBusy ? '应用中…' : '应用到全部',
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'cmp-btn',
-                disabled: bulkBusy || members.length === 0,
-                onClick: () => {
-                  askBulk(null);
+                bulkBusy ? '应用中…' : '应用到全部',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'cmp-btn',
+                  disabled: bulkBusy || members.length === 0,
+                  onClick: () => {
+                    askBulk(null);
+                  },
                 },
-              },
-              '全部恢复继承',
+                '全部恢复继承',
+              ),
             ),
-            members.length === 0
-              ? h('span', { className: 'cmp-guide' }, '还没有队友或子智能体')
-              : null,
           ),
+          members.length === 0
+            ? h('span', { className: 'cmp-guide' }, '还没有队友或子智能体')
+            : null,
           // 二次确认：把「影响多少人、换成什么」摊开，再让用户点第二次。
           bulkConfirm === null
             ? null
             : h(
                 'div',
-                { className: 'cmp-bulkRow' },
+                { className: 'cmp-bulkActions' },
                 h('span', { className: 'cmp-bulkResult cmp-bulkWarn' }, bulkConfirm.text),
                 h(
                   'button',
@@ -3565,7 +3581,7 @@ window.__ModuleLoader__.load({
             ? null
             : h(
                 'div',
-                { className: 'cmp-bulkRow' },
+                { className: 'cmp-bulkActions' },
                 h(
                   'span',
                   { className: 'cmp-bulkNote' },
@@ -3610,6 +3626,8 @@ window.__ModuleLoader__.load({
         const invalid = nameInvalid();
         const disabled = createDisabled();
         const fields = [];
+        /* 档位下拉的可选值来自「当前选中的那个模型」，所以先解一次。 */
+        const formModel = modelOf(routes, form.provider, form.model);
 
         if (kind === 'teammate') {
           fields.push(
@@ -3670,7 +3688,6 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'cmp-fields', key: 'route' },
             h(ModelSelect, {
-              className: 'cmp-provider',
               value: form.provider,
               options: providerChoiceList(routes),
               placeholder: '渠道',
@@ -3688,7 +3705,6 @@ window.__ModuleLoader__.load({
               },
             }),
             h(ModelSelect, {
-              className: 'cmp-modelSel',
               value: form.model,
               groups: modelChoiceGroups(routes, form.provider),
               placeholder: '模型',
@@ -3698,19 +3714,28 @@ window.__ModuleLoader__.load({
               disabled: creating,
               onChange: (value) => patchForm({ model: value, effort: '' }),
             }),
-            h('input', {
-              type: 'text',
-              className: 'cmp-input cmp-effort',
-              value: form.effort,
-              placeholder: '档位（可选，留空自动）',
-              'aria-label': '新成员的推理档位',
-              disabled: creating,
-              onChange: (event) => patchForm({ effort: event.target.value }),
+            h(ModelSelect, {
+              value: effortSelectValue(form.effort),
+              options: effortChoices(
+                formModel === null ? [] : formModel.efforts,
+                formModel === null ? '' : formModel.defaultEffort,
+              ),
+              placeholder: '档位（自动）',
+              emptyHint: formModel === null || formModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+              ariaLabel: '新成员的推理档位',
+              testId: 'effort-select',
+              disabled: creating || formModel === null || formModel.efforts.length === 0,
+              onChange: (value) => patchForm({ effort: effortFromSelect(value) }),
             }),
           ),
           formError === ''
             ? null
-            : h('p', { className: 'cmp-notice cmp-noticeErr', key: 'err', role: 'status' }, formError),
+            : h(
+                'p',
+                { className: 'cmp-notice cmp-noticeErr', key: 'err', role: 'status' },
+                errGlyph(),
+                h('span', null, formError),
+              ),
           h(
             'div',
             { className: 'cmp-actions', key: 'actions' },
@@ -3918,6 +3943,7 @@ window.__ModuleLoader__.load({
       }
 
       function renderEditor(member, key) {
+        const draftModel = modelOf(routes, draft.provider, draft.model);
         return h(
           'div',
           { className: 'cmp-editor' },
@@ -3925,7 +3951,6 @@ window.__ModuleLoader__.load({
             'div',
             { className: 'cmp-fields' },
             h(ModelSelect, {
-              className: 'cmp-provider',
               value: draft.provider,
               options: providerChoiceList(routes),
               placeholder: '渠道',
@@ -3943,7 +3968,6 @@ window.__ModuleLoader__.load({
               },
             }),
             h(ModelSelect, {
-              className: 'cmp-modelSel',
               value: draft.model,
               groups: modelChoiceGroups(routes, draft.provider),
               placeholder: '模型',
@@ -3953,14 +3977,19 @@ window.__ModuleLoader__.load({
               disabled: busy === key,
               onChange: (value) => patchDraft({ model: value, effort: '' }),
             }),
-            h('input', {
-              type: 'text',
-              className: 'cmp-input cmp-effort',
-              value: draft.effort,
-              placeholder: '档位（可选，留空自动）',
-              'aria-label': '推理档位',
-              disabled: busy === key,
-              onChange: (event) => patchDraft({ effort: event.target.value }),
+            h(ModelSelect, {
+              value: effortSelectValue(draft.effort),
+              options: effortChoices(
+                draftModel === null ? [] : draftModel.efforts,
+                draftModel === null ? '' : draftModel.defaultEffort,
+              ),
+              placeholder: '档位（自动）',
+              emptyHint:
+                draftModel === null || draftModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+              ariaLabel: '推理档位',
+              testId: 'effort-select',
+              disabled: busy === key || draftModel === null || draftModel.efforts.length === 0,
+              onChange: (value) => patchDraft({ effort: effortFromSelect(value) }),
             }),
           ),
           h(
@@ -4086,8 +4115,8 @@ window.__ModuleLoader__.load({
               position: 'fixed',
               top: '56px',
               right: '16px',
-              width: '340px',
-              maxHeight: '360px',
+              width: '440px',
+              maxHeight: '480px',
             }
           : {
               position: 'fixed',
@@ -4128,6 +4157,7 @@ window.__ModuleLoader__.load({
                 'aria-label': '给成员换模型',
                 style: anchorStyle,
               },
+              /* 头部固定：面板内容常有数百像素高，若整块一起滚，标题和关闭按钮会滑出视野。 */
               h(
                 'div',
                 { className: 'cmp-head' },
@@ -4138,75 +4168,82 @@ window.__ModuleLoader__.load({
                     type: 'button',
                     className: 'cmp-close',
                     'aria-label': '关闭',
+                    title: '关闭',
                     onClick: () => setOpen(false),
                   },
-                  '×',
+                  closeIcon(),
                 ),
               ),
               h(
-                'p',
-                { className: 'cmp-hint' },
-                '点成员即可换模型：正在跑的下一步就换，没在跑的等它下次被唤醒时换——都不需要重启',
-              ),
-              notice === null
-                ? null
-                : h(
-                    'p',
-                    {
-                      className:
-                        notice.kind === 'ok' ? 'cmp-notice cmp-noticeOk' : 'cmp-notice cmp-noticeErr',
-                      role: 'status',
-                    },
-                    notice.text,
-                  ),
-              routes.length === 0
-                ? h(
-                    'p',
-                    { className: 'cmp-warn' },
-                    '没有可用的模型路由（LLM 服务未就绪），暂时无法选择模型。',
-                  )
-                : null,
-              // 本对话默认：主动选一次，这个对话里派活都用它，不再询问。
-              phase === 'ready'
-                ? h(
-                    'div',
-                    { className: 'cmp-sessionBlock' },
-                    h(
-                      'div',
-                      { className: 'cmp-sessionHead' },
-                      h('span', { className: 'cmp-sessionLabel' }, '本对话默认'),
-                      h(
-                        'span',
-                        { className: 'cmp-bulkNote' },
-                        sessionDefault === null
-                          ? '还没设，第一次派活会问你一次'
-                          : '之后派活不再询问',
-                      ),
-                    ),
-                    h(ModelSelect, {
-                      value: sessionValue(),
-                      options: sessionOptions(),
-                      placeholder: '继承主 Agent',
-                      emptyHint: '没有可用的模型路由（LLM 服务未就绪）',
-                      ariaLabel: '本对话默认模型',
-                      testId: 'session-default-select',
-                      disabled: busy === 'session',
-                      onChange: (value) => {
-                        void chooseSessionDefault(value);
+                'div',
+                { className: 'cmp-body' },
+                h(
+                  'p',
+                  { className: 'cmp-hint' },
+                  '点成员即可换模型：正在跑的下一步就换，没在跑的等它下次被唤醒时换——都不需要重启',
+                ),
+                notice === null
+                  ? null
+                  : h(
+                      'p',
+                      {
+                        className:
+                          notice.kind === 'ok' ? 'cmp-notice cmp-noticeOk' : 'cmp-notice cmp-noticeErr',
+                        role: 'status',
                       },
-                    }),
-                  )
-                : null,
-              // 批量条常驻：一眼可见，不折叠。数据没读出来时先不画（没有 routes 无可选）。
-              phase === 'ready' ? renderBulkBar() : null,
-              // 失败红条紧贴批量条下方、成员列表上方：换模型失败的原因要跟操作挨在一起。
-              // 没有失败时 renderErrorBar() 返回 null，整块不占位。
-              phase === 'ready' ? renderErrorBar() : null,
-              // 新建区只在数据读出来之后给：没路由时它必然提交失败，不如先让用户看警告。
-              phase === 'ready' ? renderCreateForm() : null,
-              body,
-              // 点名表管理放最底下：它是清理用的，不该抢常用操作的视线。
-              phase === 'ready' ? renderPins() : null,
+                      notice.kind === 'ok' ? okGlyph() : errGlyph(),
+                      h('span', null, notice.text),
+                    ),
+                routes.length === 0
+                  ? h(
+                      'p',
+                      { className: 'cmp-warn' },
+                      warnGlyph(),
+                      h('span', null, '没有可用的模型路由（LLM 服务未就绪），暂时无法选择模型。'),
+                    )
+                  : null,
+                // 本对话默认：主动选一次，这个对话里派活都用它，不再询问。
+                phase === 'ready'
+                  ? h(
+                      'div',
+                      { className: 'cmp-sessionBlock' },
+                      h(
+                        'div',
+                        { className: 'cmp-sessionHead' },
+                        h('span', { className: 'cmp-sessionLabel' }, '本对话默认'),
+                        h(
+                          'span',
+                          { className: 'cmp-bulkNote' },
+                          sessionDefault === null
+                            ? '还没设，第一次派活会问你一次'
+                            : '之后派活不再询问',
+                        ),
+                      ),
+                      h(ModelSelect, {
+                        value: sessionValue(),
+                        options: sessionOptions(),
+                        placeholder: '继承主 Agent',
+                        emptyHint: '没有可用的模型路由（LLM 服务未就绪）',
+                        ariaLabel: '本对话默认模型',
+                        testId: 'session-default-select',
+                        disabled: busy === 'session',
+                        onChange: (value) => {
+                          void chooseSessionDefault(value);
+                        },
+                      }),
+                    )
+                  : null,
+                // 批量条常驻：一眼可见，不折叠。数据没读出来时先不画（没有 routes 无可选）。
+                phase === 'ready' ? renderBulkBar() : null,
+                // 失败红条紧贴批量条下方、成员列表上方：换模型失败的原因要跟操作挨在一起。
+                // 没有失败时 renderErrorBar() 返回 null，整块不占位。
+                phase === 'ready' ? renderErrorBar() : null,
+                // 新建区只在数据读出来之后给：没路由时它必然提交失败，不如先让用户看警告。
+                phase === 'ready' ? renderCreateForm() : null,
+                body,
+                // 点名表管理放最底下：它是清理用的，不该抢常用操作的视线。
+                phase === 'ready' ? renderPins() : null,
+              ),
             )
           : null,
       );
