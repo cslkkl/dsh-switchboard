@@ -21,11 +21,15 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 - 客户端改动：HMR 自动生效，不必重启。
 - 接口自测：`node tools/probe-http.mjs GET /api/v1/switchboard/state`，见 [tools/README.md](tools/README.md)。
 - 样式自检：`node tools/check-css-usage.mjs`（死规则 / 未定义类，见 [tools/README.md](tools/README.md)）。
+- 文档校验：`python tools/check-markdown-links.py . --fragments --refs --github --exclude '*research*'` 与
+  `python tools/check-line-endings.py . --exclude '*research*' --ext .js --ext .md --ext .mjs --ext .json --ext .yml --ext .py`。
 - 检查选择：文档改动 → 链接校验 + 换行校验；代码改动 → `node --check` + 对应接口自测；样式改动 → 外加 `check-css-usage`。
+- CI：`.github/workflows/check.yml` 每次推送与 PR 跑上面全部检查，命令与本节一致。
 
 ## 验证快照
 
-无 CI。以下为 2026-10-20 / 2026-10-21 命令级 + 真实实例实测：
+CI：`.github/workflows/check.yml`，每次推送与 PR 跑语法、样式自检、链接与换行校验。
+以下为 2026-10-20 / 2026-10-21 命令级 + 真实实例实测：
 
 - `node --check index.js`、`node --check client.js` 均 exit 0。
 - 热重载 `dsh-switchboard` 成功（`swapped=1`），宿主 `index.js` 1576 行、客户端 `client.js` 4103 行。
@@ -52,9 +56,8 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 ## 待办
 
 - [ ] 拆 `client.js`（4103 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
-- [ ] L3 工具链（ESLint / Prettier / pre-commit / CI）尚未接入；当前零依赖无 lint 配置。
+- [ ] L3 工具链（ESLint / Prettier / pre-commit）尚未接入；当前零依赖无 lint 配置。CI 已接入，只跑既有校验脚本。
 - [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库；该目录已排除出版本库，本机仍保留）。
-- [ ] 链接校验脚本待固化：目前靠一次性临时脚本（校验相对路径 + 手写 `#anchor` 对标题 slug），未进 `tools/`。固化成 `tools/check-links.mjs` 要连带更新 [tools/README.md](tools/README.md) 与上方「常用命令」（[tools/AGENTS.md](tools/AGENTS.md) 的硬要求），是独立一条工作。
 
 ## 活跃坑
 

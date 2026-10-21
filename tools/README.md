@@ -39,6 +39,25 @@
 - 典型用途：改完样式后确认删干净的规则真的删掉了、新加的类都有定义。
 - 依赖：无。被依赖：人工自检；根 [AGENTS.md](../AGENTS.md) 常用命令引用它。
 
+## check-markdown-links.py
+
+- 作用：校验 Markdown 里的相对链接、锚点与「引用未做成链接」。
+- 用法：`python tools/check-markdown-links.py . --fragments --refs --github --exclude '*research*'`
+- 关键参数：`--github` 模拟 GitHub 实际解析（大小写敏感、目标须被 git 跟踪）；
+  `--fragments` 校验 `#锚点`；`--refs` 校验文档引用未做成链接；`--exclude` 按 fnmatch 排除。
+- 退出码：0 = 只有警告；1 = 有错误（断链）。
+- 典型用途：改完文档后确认没有断链、锚点仍对应真实标题。
+- 依赖：仅标准库。被依赖：CI（`.github/workflows/check.yml`）。
+
+## check-line-endings.py
+
+- 作用：检查仓库内文本文件的换行符是否一致。
+- 用法：`python tools/check-line-endings.py . --exclude '*research*' --ext .js --ext .md --ext .mjs --ext .json --ext .yml --ext .py`
+- 关键参数：`--ext` 指定要检查的扩展名（可多次）；`--exclude` 按 fnmatch 排除。
+- 退出码：0 = 一致；1 = 存在不一致。
+- 典型用途：跨平台协作或批量改动后确认没有混进 CRLF。
+- 依赖：仅标准库。被依赖：CI（`.github/workflows/check.yml`）。
+
 ## 文档网络的出口
 
 - 规则层 → [AGENTS.md](AGENTS.md)

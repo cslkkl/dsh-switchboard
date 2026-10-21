@@ -1,0 +1,35 @@
+name: check
+
+# 每次推送与 PR 都跑：语法、样式自检、文档链接与换行。
+# 全部是零依赖脚本，不需要 Node 之外的任何东西，也不需要跑真实实例。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 宿主与客户端语法
+        run: |
+          node --check index.js
+          node --check client.js
+
+      - name: 样式类使用自检
+        # 死规则（定义了没人引用）与未定义类（引用了没有定义）都要为 0。
+        run: node tools/check-css-usage.mjs
+
+      - name: Markdown 链接校验
+        # --github 模拟 GitHub 实际解析：大小写敏感，且目标须被 git 跟踪。
+        run: python3 tools/check-markdown-links.py . --fragments --refs --github --exclude '*research*'
+
+      - name: 换行一致性
+        run: python3 tools/check-line-endings.py . --exclude '*research*' --ext .js --ext .md --ext .mjs --ext .json --ext .yml --ext .py
