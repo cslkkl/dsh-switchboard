@@ -5,7 +5,7 @@
 - 换路由必须同时确定推理档位，否则回落到路由级默认档并可能硬失败。见 [架构·推理档位耦合](docs/ARCHITECTURE.md#推理档位耦合必须一起处理)。
 - 配置写 `rules.json`，不写 patch；写 patch 会重建 fiber。见 [架构·配置契约](docs/ARCHITECTURE.md#配置契约)。
 - 配置写入一律 `{ ...readJsonFile(), ...本次改动 }`，**不得整体覆写**（否则清掉 `sessions`/`asked`）。见 [决策记录](.agents/notes/2026-10-20-config-write-merge.md)。
-- 只用官方接缝（`agent/created` / `agent/request` / `agent.options`），不 monkey-patch 他人服务方法。
+- 只用官方接缝（`agent/created` / `agent/request` / `agent/disposed` / `system-prompt/assemble`），不 monkey-patch 他人服务方法。
 - 客户端模块清单在宿主启动时扫描；改了 `package.json` 的 `dsh.client` 段必须重启。
 - 文档改动后跑链接校验；大批量改动后跑换行校验。
 

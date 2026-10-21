@@ -11,7 +11,7 @@
 [![Dependencies](https://img.shields.io/badge/dependencies-0-339933?style=flat-square)](package-lock.json)
 [![Platform](https://img.shields.io/badge/platform-DSH%20Web-111827?style=flat-square)](docs/ARCHITECTURE.md)
 
-[为什么](#为什么需要它) · [怎么工作](#怎么工作) · [能力](#能力) · [安装](#安装) · [界面](#界面) · [边界](#边界)
+[为什么](#为什么需要它) · [怎么工作](#怎么工作) · [能力](#能力) · [安装](#安装) · [界面](#界面) · [生效时机](#生效时机) · [边界](#边界) · [兼容性](#兼容性)
 
 </div>
 
@@ -142,6 +142,22 @@ dsh plugin --profile web add "<本插件目录>"
 - 主 Agent 不受影响。
 - 换模型不改 provider 的输出上限，`maxTokens` 仍由 provider profile 决定。
 - 与 monkey-patch `spawnTeammate` 的同类插件互斥，只启用一个。
+
+## 兼容性
+
+这个插件依赖 DeepSeek Harness 的内部接缝，不是稳定公开 API：
+
+| 依赖的东西 | 用在哪 | 宿主变了会怎样 |
+|---|---|---|
+| `agent/created` / `agent/request` | 委派时改写子会话的模型与档位 | 接缝改名或改语义，插件不再生效 |
+| `agent/disposed` | 成员结束时清理点名表 | 清理不到，残留键留在设置文件里 |
+| `system-prompt/assemble` | 给子会话注入模型说明 | 注入失效，不影响换模型本身 |
+| `--dsw-*` 主题 token | 界面配色、圆角、焦点环 | 变量改名，界面退回中性色（不影响功能） |
+| `plugins.bundle.config` / `conversation.session.header.actions` / `shell.overlay` | 三个界面挂载点 | 挂载点消失，对应界面不出现 |
+| 档位元数据（`efforts`） | 下拉里的档位选项 | 拿不到档位时退回「自动」，由路由级默认档兜底 |
+
+**宿主升级后如果界面不出现或换模型无效，先看这里**：多半是上面某一项变了，不是配置写错。
+本插件跟着宿主的具体版本走，没有做跨版本兼容层。
 
 ## 许可
 
