@@ -7,11 +7,19 @@
 主 Agent 用一个模型，派出去的活换一个：贵的活给强模型，琐碎的活给便宜的
 
 [![License](https://img.shields.io/badge/license-MIT-2563eb?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?style=flat-square)](.node-version)
+[![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat-square)](.node-version)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-339933?style=flat-square)](package-lock.json)
 [![Platform](https://img.shields.io/badge/platform-DSH%20Web-111827?style=flat-square)](docs/ARCHITECTURE.md)
 
-[为什么](#为什么需要它) · [能力](#能力) · [安装](#安装) · [界面](#界面) · [边界](#边界)
+[为什么](#为什么需要它) · [怎么工作](#怎么工作) · [能力](#能力) · [安装](#安装) · [界面](#界面) · [边界](#边界)
+
+</div>
+
+<div align="center">
+
+![成员模型面板](docs/member-panel.png)
+
+<sub>对话头部点「模型」打开的成员面板，每一行标出该成员当前的生效状态与实际模型</sub>
 
 </div>
 
@@ -25,6 +33,20 @@
 | `subagent` | 有 | 每次调用手写参数，且要过白名单 |
 
 这个插件把它变成一块接线板：一个对话里的成员都在板上，每人接一条线路，点一下就换。
+
+## 怎么工作
+
+每个成员实际用哪个模型，按这张表从前往后找，命中即止：
+
+| 顺序 | 来源 | 命中条件 |
+|---|---|---|
+| 1 | 点名指定 | `members[队友名]`，或 `members['#<子会话 id>']` |
+| 2 | 本对话默认 | `sessions[<本对话 id>]` |
+| 3 | 规则 | 队友名精确 → 队友名包含 → 委派描述包含 |
+| 4 | 全局默认 | `defaultRoute` |
+| 5 | 继承 | 主 Agent 当前的路由 |
+
+命中的是哪一层，界面会直接写出来，不用猜。
 
 ## 能力
 
@@ -62,8 +84,6 @@ dsh plugin --profile web add "<本插件目录>"
 }
 ```
 
-优先级：点名指定（队友名或 `#<子会话 id>`）→ 本对话默认 → 规则 → 全局默认 → 继承主 Agent。
-
 成员点名以设置文件为准；patch 里的 `members` 仅作初始值，界面或 `/spawn` 写过之后就只认文件。要增删成员请走面板或接口，别改 patch。
 
 <details>
@@ -76,14 +96,6 @@ dsh plugin --profile web add "<本插件目录>"
 
 ## 界面
 
-<div align="center">
-
-![设置卡片](docs/settings-card.png)
-
-<sub>插件详情页的规则卡片：每条规则显示匹配词、目标模型，以及最近命中的成员</sub>
-
-</div>
-
 | 入口 | 位置 | 用途 |
 |---|---|---|
 | 「模型」按钮 | 对话头部操作区 | 点成员换模型、批量换、本对话默认、新建成员 |
@@ -95,6 +107,10 @@ dsh plugin --profile web add "<本插件目录>"
 <summary>更多截图</summary>
 
 <div align="center">
+
+![设置卡片](docs/settings-card.png)
+
+<sub>插件详情页的规则卡片：每条规则显示匹配词、目标模型、推理档位，以及最近命中的成员</sub>
 
 ![模型下拉](docs/dropdown-width.png)
 
