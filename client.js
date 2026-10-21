@@ -788,8 +788,10 @@ window.__ModuleLoader__.load({
             'position:absolute;left:-9999px;top:-9999px;visibility:hidden;display:flex;align-items:center;gap:6px;padding:0 6px;font-size:13px;line-height:18px;white-space:nowrap';
           const labelEl = document.createElement('span');
           const hintEl = document.createElement('span');
+          /* 这里的字号/行高必须与 `.mds-optionHint` 的 CSS 完全一致，
+             否则量出来的宽度偏窄、弹层又回到截断状态。 */
           hintEl.style.cssText =
-            'font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace';
+            'font-size:12px;line-height:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace';
           probe.appendChild(labelEl);
           probe.appendChild(hintEl);
           document.body.appendChild(probe);
@@ -1260,6 +1262,65 @@ window.__ModuleLoader__.load({
     }
 
 
+    /** 12×12 小图标外壳：currentColor 描边，实际尺寸交给外层 CSS 类。
+        语义色一律由外层类（`.cm-stateIcon` / `.cmt-icon`）给，图标自己不染色。
+        默认类名只留 `cm-stateIcon` 一个：卡片与面板共用同一套状态图标，
+        两处各起一个前缀（`cm-` / `cmp-`）会让只有其中一边有 CSS 规则、图标退化成无尺寸。 */
+    function glyphIcon(className, ...paths) {
+      return h(
+        'svg',
+        { className, viewBox: '0 0 12 12', 'aria-hidden': 'true', focusable: 'false' },
+        ...paths,
+      );
+    }
+
+    function strokePath(d, width) {
+      return h('path', {
+        d,
+        stroke: 'currentColor',
+        strokeWidth: width || 1.4,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        fill: 'none',
+      });
+    }
+
+    function ringPath() {
+      return h('circle', {
+        cx: 6,
+        cy: 6,
+        r: 4.6,
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        fill: 'none',
+      });
+    }
+
+    /** 关闭（×）：替掉原先直接塞文本 '×' 的做法 —— 文本字形随字体变，基线和大小时大时小。 */
+    function closeIcon(className) {
+      return glyphIcon(className || 'cmp-closeIcon', strokePath('M3.2 3.2l5.6 5.6M8.8 3.2l-5.6 5.6'));
+    }
+
+    /** 成功：圆 + 勾。 */
+    function okGlyph(className) {
+      return glyphIcon(className || 'cm-stateIcon', ringPath(), strokePath('M3.9 6.1l1.5 1.5 2.9-3.1', 1.3));
+    }
+
+    /** 警告：圆 + 叹号。 */
+    function warnGlyph(className) {
+      return glyphIcon(
+        className || 'cm-stateIcon',
+        ringPath(),
+        strokePath('M6 3.5v3.2', 1.4),
+        strokePath('M6 8.5v.01', 1.8),
+      );
+    }
+
+    /** 失败：圆 + 叉。 */
+    function errGlyph(className) {
+      return glyphIcon(className || 'cm-stateIcon', ringPath(), strokePath('M4.3 4.3l3.4 3.4M7.7 4.3l-3.4 3.4', 1.3));
+    }
+
     /** 折叠箭头：展开时转 90°。 */
     function caretIcon(isOpen) {
       return h(
@@ -1329,14 +1390,17 @@ window.__ModuleLoader__.load({
     /* ── 样式：只用主题 token，颜色零硬编码 ───────────────────────────────── */
 
     const CSS = [
-      '.cm-card{box-sizing:border-box;display:flex;flex-direction:column;gap:16px;padding:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}',
+      /* ── 设置卡片（插件详情页的 plugins.bundle.config 槽） ───────────── */
+      '.cm-card{box-sizing:border-box;display:flex;flex-direction:column;gap:16px;padding:16px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}',
       '.cm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}',
       '.cm-headText{display:flex;flex-direction:column;gap:4px;min-width:0}',
-      '.cm-title{margin:0;font-size:15px;font-weight:500;line-height:22px}',
+      '.cm-title{margin:0;font-size:14px;font-weight:500;line-height:20px}',
       '.cm-hint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       '.cm-summary{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}',
-      '.cm-warn{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-label)}',
-      '.cm-section{display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid var(--dsw-alias-border-l1);min-width:0}',
+      /* 警告/成功这类「成句的话」用中性字色，语义色只留给前面的图标 ——
+         绿/琥珀当正文色在亮色下只有 2.28:1 / 2.79:1，读不出来。 */
+      '.cm-warn{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.cm-section{display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:.5px solid var(--dsw-alias-border-l1);min-width:0}',
       '.cm-sectionTitle{margin:0;font-size:13px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary)}',
       '.cm-field{display:flex;flex-direction:column;gap:6px;min-width:0}',
       /* 字段内部：输入框和下拉撑满字段宽度，且不参与外层 flex 伸展 ——
@@ -1344,84 +1408,111 @@ window.__ModuleLoader__.load({
       '.cm-field .cm-input,.cm-field .cm-match{flex:none;width:100%}',
       '.cm-field .mds{width:100%;min-width:0;align-self:stretch}',
       '.cm-fieldLabel{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
-      '.cm-fieldHint{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
+      '.cm-fieldHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       '.cm-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}',
       '.cm-rules{display:flex;flex-direction:column;gap:8px;min-width:0}',
-      '.cm-ruleCard{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);min-width:0}',
-      '.cm-ruleTop{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;min-width:0}',
+      '.cm-ruleCard{display:flex;flex-direction:column;gap:8px;padding:10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);min-width:0}',
+      /* 规则行：字段与删除按钮同一行。按钮绝对定位贴在**控件行**右端
+         （top:24px = .cm-fieldLabel 18px + 6px 间距）。不跟着 flex 流走，
+         否则字段一换行按钮就掉到第二行中间，看着像随手扔的。 */
+      '.cm-ruleTop{position:relative;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;min-width:0;padding-right:38px}',
+      '.cm-ruleTop > .cm-iconBtn{position:absolute;top:24px;right:0}',
       '.cm-ruleMeta{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}',
       '.cm-ruleMetaHit{color:var(--dsw-alias-label-secondary)}',
       /* 规则试算：一行输入 + 按钮，下面一行结果。尺寸沿用 .cm-input / .cm-btn，不另起一套。 */
       '.cm-probe{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}',
       '.cm-probeInput{flex:1 1 180px}',
-      '.cm-probeResult{margin:0;font-size:12px;line-height:18px;overflow-wrap:anywhere}',
-      '.cm-probeHit{color:var(--dsw-alias-state-success-primary)}',
-      '.cm-probeNone{color:var(--dsw-alias-label-tertiary)}',
+      '.cm-probeResult{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}',
+      '.cm-probeNone{color:var(--dsw-alias-label-secondary)}',
       '.cm-probeErr{color:var(--dsw-alias-state-error-primary)}',
-      '.cm-probeWait{color:var(--dsw-alias-state-warn-label)}',
-      '.cm-iconBtn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:26px;height:26px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}',
+      /* 状态图标：唯一承载语义色的地方，正文一律中性字色。 */
+      '.cm-stateIcon{display:inline-flex;flex:none;width:12px;height:12px;margin-top:3px;color:var(--dsw-alias-label-secondary)}',
+      '.cm-probeHit .cm-stateIcon{color:var(--dsw-alias-state-success-primary)}',
+      '.cm-probeWait .cm-stateIcon{color:var(--dsw-alias-state-warn-primary)}',
+      '.cm-probeErr .cm-stateIcon{color:var(--dsw-alias-state-error-primary)}',
+      '.cm-warn .cm-stateIcon{color:var(--dsw-alias-state-warn-primary)}',
+      /* 图标按钮高度对齐同行控件（30px），这样贴齐后与输入框同高。 */
+      '.cm-iconBtn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:30px;height:30px;padding:0;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}',
       '.cm-iconBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-state-error-primary)}',
-      '.cm-iconBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cm-iconBtn:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cm-check{display:inline-flex;align-items:center;gap:6px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}',
       '.cm-check input{width:14px;height:14px;margin:0;cursor:pointer;accent-color:var(--dsw-alias-brand-primary)}',
-      '.cm-input{box-sizing:border-box;height:30px;min-width:0;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}',
+      '.cm-input{box-sizing:border-box;height:30px;min-width:0;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}',
       '.cm-input::placeholder{color:var(--dsw-alias-label-tertiary)}',
       '.cm-input:hover{border-color:var(--dsw-alias-border-l3)}',
-      '.cm-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cm-input:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cm-input:disabled{opacity:.45;cursor:not-allowed}',
-      '.cm-match{flex:1 1 150px}',
-      '.cm-provider{flex:0 1 160px}',
-      '.cm-model{flex:0 1 200px}',
-      '.cm-effort{flex:0 1 160px}',
+      '.cm-match{flex:1 1 130px}',
+      '.cm-provider{flex:0 1 150px}',
+      '.cm-model{flex:0 1 175px}',
+      '.cm-effort{flex:0 1 150px}',
       '.cm-depth{width:84px}',
-      '.cm-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}',
+      '.cm-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}',
       '.cm-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}',
       '.cm-btn:disabled{opacity:.5;cursor:default}',
-      '.cm-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
-      '.cm-btnPrimary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-bg-layer-1)}',
+      '.cm-btn:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
+      '.cm-btnPrimary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}',
       '.cm-btnPrimary:hover:not(:disabled){border-color:var(--dsw-alias-button-primary-hover);background:var(--dsw-alias-button-primary-hover)}',
       '.cm-btnDanger{color:var(--dsw-alias-state-error-primary)}',
       '.cm-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
-      '.cm-ok{font-size:12px;line-height:18px;color:var(--dsw-alias-state-success-primary)}',
-      '.cm-err{font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
-      '.cm-empty{padding:8px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
-      '.cm-skeleton{height:12px;border-radius:4px;background:var(--dsw-alias-bg-layer-2)}',
+      '.cm-ok{display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.cm-ok .cm-stateIcon{color:var(--dsw-alias-state-success-primary)}',
+      '.cm-err{display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
+      '.cm-err .cm-stateIcon{color:var(--dsw-alias-state-error-primary)}',
+      '.cm-empty{padding:8px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.cm-skeleton{height:12px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-skeleton)}',
       '.cm-skeletonShort{width:45%}',
-      '.cm-switchTrack{position:relative;box-sizing:border-box;flex:none;width:34px;height:20px;padding:0;border:1px solid var(--dsw-alias-border-l3);border-radius:999px;background:var(--dsw-alias-bg-layer-3);cursor:pointer;transition:background-color .12s,border-color .12s}',
-      '.cm-switchTrack[aria-checked="true"]{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill)}',
-      '.cm-switchTrack:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}',
-      '.cm-switchKnob{position:absolute;top:2px;left:2px;display:block;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);transition:transform .12s}',
-      '.cm-switchTrack[aria-checked="true"] .cm-switchKnob{transform:translateX(14px)}',
+      /* 卡片里的开关：宿主插件页自己也有一个启用开关，长得一模一样会分不清。
+         所以这里配一个可见文字标签，并换成次级形态（描边而非实心块）。 */
+      '.cm-switchBox{display:flex;align-items:center;gap:8px;flex:none;padding:0 10px 0 0}',
+      '.cm-switchLabel{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:nowrap}',
+      '.cm-switchTrack{position:relative;box-sizing:border-box;flex:none;width:28px;height:16px;padding:0;border:.5px solid var(--dsw-alias-border-l3);border-radius:999px;background:var(--dsw-alias-border-l2);cursor:pointer;transition:background-color .12s,border-color .12s}',
+      '.cm-switchTrack[aria-checked="true"]{border-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-primary)}',
+      '.cm-switchTrack:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
+      '.cm-switchKnob{position:absolute;top:1px;left:1px;display:block;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-switch-thumb);transition:transform .12s}',
+      '.cm-switchTrack[aria-checked="true"] .cm-switchKnob{transform:translateX(12px)}',
       '.cm-table{width:100%;border-collapse:collapse;font-size:12px;line-height:18px}',
-      '.cm-table th{padding:6px 10px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-weight:500;text-align:left;white-space:nowrap}',
-      '.cm-table td{padding:6px 10px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);vertical-align:top}',
+      '.cm-table th{padding:6px 10px 6px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-weight:500;text-align:left;white-space:nowrap}',
+      '.cm-table td{padding:6px 10px 6px 0;border-bottom:.5px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);vertical-align:top}',
       '.cm-table tr:last-child td{border-bottom:0}',
       '.cm-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}',
       '.cm-sub{margin-top:2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}',
 
       /* ── 对话头部的「模型」按钮 + 成员选择面板 ─────────────────────────── */
       '.cmp-root{position:relative;display:inline-flex;align-items:center}',
-      '.cmp-trigger{box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:16px;cursor:pointer;transition:background-color .12s,color .12s}',
+      /* 尺寸对齐宿主同一排的兄弟按钮（「智能体团队」等）：min-height 28、gap 5、padding 3 7。
+         之前是 24px/13px 图标，与兄弟按钮底边差 2px，一排按钮看着是歪的。
+         圆角保持 6px —— 宿主兄弟按钮也是 6px，换成 token 的 8px 反而会比邻居更圆。 */
+      '.cmp-trigger{box-sizing:border-box;display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:16px;cursor:pointer;transition:background-color .12s,color .12s}',
       '.cmp-trigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.cmp-trigger[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.cmp-trigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
-      '.cmp-icon{display:block;flex:none;width:13px;height:13px}',
-      '.cmp-panel{box-sizing:border-box;position:fixed;z-index:1000;display:flex;flex-direction:column;gap:8px;overflow:auto;padding:10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}',
-      '.cmp-head{display:flex;align-items:center;gap:8px;min-width:0}',
-      '.cmp-headTitle{margin:0;font-size:12px;font-weight:600;line-height:18px;color:var(--dsw-alias-label-secondary);flex:1;min-width:0}',
-      '.cmp-close{box-sizing:border-box;flex:none;width:20px;height:20px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:14px;line-height:16px;cursor:pointer}',
+      '.cmp-trigger:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
+      '.cmp-icon{display:block;flex:none;width:14px;height:14px}',
+      /* 面板：外框不滚动，只有中间的 .cmp-body 滚（否则标题和关闭按钮会跟着滑走，
+         滚到中间时既看不到自己在哪个面板、也没有出口）。 */
+      '.cmp-panel{box-sizing:border-box;position:fixed;z-index:1000;display:flex;flex-direction:column;overflow:hidden;padding:0;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-3);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.6}',
+      '.cmp-head{box-sizing:border-box;flex:none;display:flex;align-items:center;gap:8px;min-width:0;padding:10px 10px 8px;border-bottom:.5px solid var(--dsw-alias-border-l1)}',
+      '.cmp-headTitle{margin:0;font-size:13px;font-weight:500;line-height:20px;color:var(--dsw-alias-label-primary);flex:1;min-width:0}',
+      '.cmp-close{box-sizing:border-box;flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--dsw-radius-xs);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;cursor:pointer}',
       '.cmp-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.cmp-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-close:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
+      '.cmp-closeIcon{display:block;width:14px;height:14px}',
+      '.cmp-body{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:8px 10px 10px}',
       '.cmp-hint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
-      '.cmp-warn{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-label)}',
-      '.cmp-notice{margin:0;font-size:12px;line-height:18px}',
-      '.cmp-noticeOk{color:var(--dsw-alias-state-success-primary)}',
-      '.cmp-noticeErr{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
+      /* 警告与成功提示是成句的话：字色用中性色，语义色只给前面的图标。
+         图标复用卡片那套 `.cm-stateIcon`（同一组 helper、同一条规则），
+         这里只覆盖它在面板语境下的取色，不另立一个 `cmp-` 前缀。 */
+      '.cmp-warn{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.cmp-notice{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}',
+      '.cmp-noticeErr{overflow-wrap:anywhere}',
+      '.cmp-warn .cm-stateIcon{color:var(--dsw-alias-state-warn-primary)}',
+      '.cmp-noticeOk .cm-stateIcon{color:var(--dsw-alias-state-success-primary)}',
+      '.cmp-noticeErr .cm-stateIcon{color:var(--dsw-alias-state-error-primary)}',
       '.cmp-list{display:flex;flex-direction:column;gap:2px;min-width:0}',
-      '.cmp-row{display:flex;flex-direction:column;min-width:0;border-radius:6px}',
-      '.cmp-rowBtn{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;padding:6px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}',
+      '.cmp-row{display:flex;flex-direction:column;min-width:0;border-radius:var(--dsw-radius-sm)}',
+      '.cmp-rowBtn{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;padding:6px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}',
       '.cmp-rowBtn:hover{background:var(--dsw-alias-interactive-bg-hover)}',
-      '.cmp-rowBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-rowBtn:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}',
       '.cmp-rowBtn[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}',
       '.cmp-rowIcon{display:block;flex:none;width:14px;height:14px;color:var(--dsw-alias-label-tertiary)}',
       '.cmp-rowMain{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}',
@@ -1429,70 +1520,80 @@ window.__ModuleLoader__.load({
       '.cmp-sub{font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.cmp-model{flex:none;max-width:46%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.cmp-modelNone{color:var(--dsw-alias-label-tertiary)}',
-      '.cmp-badge{flex:none;padding:0 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}',
+      /* 徽标：11px 在老版 Windows 上发虚，统一抬到 12px，与正文同档。 */
+      '.cmp-badge{flex:none;padding:0 6px;border:.5px solid var(--dsw-alias-border-l2);border-radius:999px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px}',
       '.cmp-badgeLive{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-state-success-primary)}',
       '.cmp-badgePending{border-color:var(--dsw-alias-state-warn-label);color:var(--dsw-alias-state-warn-label)}',
-      '.cmp-editor{display:flex;flex-direction:column;gap:8px;margin:2px 0 6px;padding:8px 6px 10px;border-top:1px solid var(--dsw-alias-border-l1);min-width:0}',
-      '.cmp-fields{display:flex;gap:8px;flex-wrap:wrap;min-width:0}',
-      '.cmp-input{box-sizing:border-box;height:30px;min-width:0;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px}',
+      '.cmp-editor{display:flex;flex-direction:column;gap:8px;margin:2px 0 6px;padding:8px 6px 10px;border-top:.5px solid var(--dsw-alias-border-l1);min-width:0}',
+      /* 路由三档（渠道 / 模型 / 档位）每行两列。三列并排在 440px 面板里只剩 133px，
+         `DeepSeek-V4.1-Flash` 和「自动（由适配器挑）」都会被截断。
+         第三个（档位）独占一整行，避免右下角留一个空格子。 */
+      '.cmp-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-width:0}',
+      '.cmp-fields > .mds{width:100%;min-width:0;align-self:stretch}',
+      '.cmp-fields > .mds:last-child{grid-column:1/-1}',
+      '.cmp-input{box-sizing:border-box;height:30px;min-width:0;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px}',
       '.cmp-input::placeholder{color:var(--dsw-alias-label-tertiary)}',
       '.cmp-input:hover{border-color:var(--dsw-alias-border-l3)}',
-      '.cmp-input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-input:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cmp-input:disabled{opacity:.45;cursor:not-allowed}',
-      '.cmp-provider{flex:0 1 150px}',
-      '.cmp-modelSel{flex:0 1 190px}',
-      '.cmp-effort{flex:1 1 130px}',
       '.cmp-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
-      '.cmp-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}',
+      '.cmp-btn{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}',
       '.cmp-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}',
       '.cmp-btn:disabled{opacity:.5;cursor:default}',
-      '.cmp-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
-      '.cmp-btnPrimary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-bg-layer-1)}',
+      '.cmp-btn:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
+      '.cmp-btnPrimary{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}',
       '.cmp-btnPrimary:hover:not(:disabled){border-color:var(--dsw-alias-button-primary-hover);background:var(--dsw-alias-button-primary-hover)}',
       '.cmp-empty{padding:10px 2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
 
       /* ── 面板里的「新建队友 / 子智能体」表单 ─────────────────────────── */
-      '.cmp-create{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
-      '.cmp-createHead{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;font-weight:600;line-height:18px;text-align:left;cursor:pointer}',
+      '.cmp-create{display:flex;flex-direction:column;gap:8px;padding:8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
+      '.cmp-createHead{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;padding:0;border:0;border-radius:var(--dsw-radius-xs);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;font-weight:500;line-height:18px;text-align:left;cursor:pointer}',
       '.cmp-createHead:hover{color:var(--dsw-alias-label-primary)}',
-      '.cmp-createHead:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-createHead:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cmp-caret{display:block;flex:none;width:10px;height:10px;transition:transform .12s;color:var(--dsw-alias-label-tertiary)}',
       '.cmp-caretOpen{transform:rotate(90deg)}',
       '.cmp-kinds{display:flex;gap:6px;flex-wrap:wrap}',
       '.cmp-createBody{display:flex;flex-direction:column;gap:8px;min-width:0}',
-      '.cmp-kind{box-sizing:border-box;height:26px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}',
+      '.cmp-kind{box-sizing:border-box;height:26px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}',
       '.cmp-kind:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.cmp-kind[aria-pressed="true"]{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-bg-layer-1)}',
+      '.cmp-kind[aria-pressed="true"]{border-color:var(--dsw-alias-button-primary-fill);background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}',
       '.cmp-kind:disabled{opacity:.5;cursor:default}',
-      '.cmp-kind:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-kind:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cmp-field{display:flex;flex-direction:column;gap:3px;min-width:0}',
       '.cmp-label{font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary)}',
-      '.cmp-textarea{box-sizing:border-box;width:100%;min-height:56px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;resize:vertical}',
+      '.cmp-textarea{box-sizing:border-box;width:100%;min-height:56px;padding:6px 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;resize:vertical}',
       '.cmp-textarea::placeholder{color:var(--dsw-alias-label-tertiary)}',
       '.cmp-textarea:hover{border-color:var(--dsw-alias-border-l3)}',
-      '.cmp-textarea:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmp-textarea:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cmp-textarea:disabled{opacity:.45;cursor:not-allowed}',
       '.cmp-inputWide{width:100%}',
-      '.cmp-fieldErr{font-size:11px;line-height:16px;color:var(--dsw-alias-state-error-primary)}',
+      '.cmp-fieldErr{font-size:12px;line-height:16px;color:var(--dsw-alias-state-error-primary)}',
       '.cmp-guide{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
 
       /* ── 批量：把本会话全部成员换成同一个模型 ─────────────────────────── */
-      '.cmp-bulk{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
-      '.cmp-bulkRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}',
-      '.cmp-bulkLabel{flex:none;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.cmp-bulk{display:flex;flex-direction:column;gap:8px;padding:8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
+      /* 批量条分两行两列：第一行渠道 / 模型，第二行档位 / 按钮。
+         三个控件挤一行时，460px 的面板里每档只剩约 130px，`deepseek-v4.1-flash`
+         和「自动（由适配器挑）」都会被截断，标签也放不下。 */
+      '.cmp-bulkRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end;min-width:0}',
+      '.cmp-bulkRow > .mds{width:100%;min-width:0;align-self:stretch}',
+      '.cmp-bulkActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;align-self:end}',
+      '.cmp-bulkActions > *{flex:none}',
       '.cmp-bulkResult{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
-      '.cmp-bulkWarn{color:var(--dsw-alias-state-warn-label)}',
+      /* 句子里需要强调的是「这一段」，不是「这个色」：
+         用加粗 + 正文色，不用琥珀色（12px 琥珀在白底只有 2.79:1，等于把重点写成最淡的）。 */
+      '.cmp-bulkWarn{color:var(--dsw-alias-label-primary);font-weight:500}',
       '.cmp-bulkErr{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
       '.cmp-bulkNote{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       /* 失败红条：容器沿用 .cmp-bulk/.cmp-create 那套（border-l1 + layer-1），
-         语义只靠 .cmp-noticeErr 的红字表达，不引入新的视觉语言。 */
-      '.cmp-errorBar{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
+         语义只靠图标和红字表达，不引入新的视觉语言。 */
+      '.cmp-errorBar{display:flex;flex-direction:column;gap:6px;padding:6px 8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
       '.cmp-errorRow{display:flex;align-items:flex-start;gap:8px;min-width:0}',
       '.cmp-errorText{flex:1 1 auto;min-width:0;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
       '.cmp-errorList{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;min-width:0}',
       '.cmp-errorItem{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
       '.cmp-errorTime{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}',
-      '.cmp-errorBarBtn{flex:none;height:22px;padding:0 6px;font-size:11px;line-height:20px}',
+      '.cmp-errorBarBtn{flex:none;height:22px;padding:0 8px;font-size:12px;line-height:20px}',
       /* 「本对话默认」块：标题行（标签 + 说明）+ 一个下拉，和批量条同一层级。 */
       '.cmp-sessionBlock{display:flex;flex-direction:column;gap:6px;min-width:0}',
       '.cmp-sessionHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}',
@@ -1500,28 +1601,33 @@ window.__ModuleLoader__.load({
       '.cmp-sessionBlock .mds{width:100%;min-width:0;align-self:stretch}',
 
       /* ── 点名表管理（面板最底部的折叠块） ─────────────────────────────── */
-      '.cmp-pins{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);min-width:0}',
+      '.cmp-pins{display:flex;flex-direction:column;gap:8px;padding:8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
       '.cmp-pinHead{display:flex;align-items:center;gap:8px;min-width:0}',
       '.cmp-pinHead .cmp-createHead{flex:1 1 auto;min-width:0}',
       '.cmp-pinRow{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 0}',
       '.cmp-pinKey{flex:1 1 auto;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.cmp-pinStale{color:var(--dsw-alias-state-warn-label)}',
-      '.cmp-pinModel{flex:0 1 52%;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}',
+      '.cmp-pinStale{color:var(--dsw-alias-label-tertiary)}',
+      '.cmp-pinStale::after{content:" · 模型已下线";color:var(--dsw-alias-state-warn-label)}',
+      '.cmp-pinModel{flex:0 1 52%;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}',
       '.cmp-pinBtn{flex:none;height:26px;padding:0 8px;font-size:12px}',
 
       /* ── 跨面板 toast（挂 framework 的 shell.overlay） ─────────────────── */
       /* shell.overlay 的图层本身是 pointer-events:none（点得穿），容器必须保持 none，
-         只有每条 toast 自己开 auto，否则一整层会挡住下面的界面。 */
-      '.cmt-layer{position:fixed;top:12px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 32px));pointer-events:none}',
-      '.cmt-toast{box-sizing:border-box;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);box-shadow:0 8px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;pointer-events:auto}',
-      '.cmt-toastOk{border-color:var(--dsw-alias-state-success-primary)}',
-      '.cmt-toastErr{border-color:var(--dsw-alias-state-error-primary)}',
+         只有每条 toast 自己开 auto，否则一整层会挡住下面的界面。
+         `top` 用宿主的 `--dsh-frame-overlay-top`：macOS 与 Windows 标题栏会占据顶部，
+         写死 12px 会让 toast 压在标题栏按钮下面（Darwin 下该变量是 48+20px）。 */
+      '.cmt-layer{position:fixed;top:var(--dsh-frame-overlay-top,12px);right:16px;z-index:2000;display:flex;flex-direction:column;gap:8px;max-width:min(420px,calc(100vw - 32px));pointer-events:none}',
+      /* 跟随宿主 toast 的观感：深色药丸 + 浅字（两套主题都是），
+         语义只靠左侧图标，不靠整条染色 —— 整条绿底/红底在两套主题下都要单独调对比度。 */
+      '.cmt-toast{box-sizing:border-box;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-toast-bg);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-toast-label);font-size:12px;line-height:18px;pointer-events:auto}',
+      '.cmt-icon{display:inline-flex;flex:none;width:12px;height:12px;margin-top:3px;opacity:.9}',
+      '.cmt-toastOk .cmt-icon{color:var(--dsw-alias-state-success-secondary)}',
+      '.cmt-toastErr .cmt-icon{color:var(--dsw-alias-state-error-secondary)}',
       '.cmt-text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}',
-      '.cmt-toastOk .cmt-text{color:var(--dsw-alias-state-success-primary)}',
-      '.cmt-toastErr .cmt-text{color:var(--dsw-alias-state-error-primary)}',
-      '.cmt-close{box-sizing:border-box;flex:none;width:18px;height:18px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:16px;cursor:pointer;pointer-events:auto}',
-      '.cmt-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
-      '.cmt-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}',
+      '.cmt-close{box-sizing:border-box;flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;border-radius:var(--dsw-radius-xs);background:transparent;color:inherit;opacity:.6;font:inherit;cursor:pointer;pointer-events:auto}',
+      '.cmt-close:hover{opacity:1}',
+      '.cmt-close:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-alias-toast-label);outline-offset:1px}',
+      '.cmt-closeIcon{display:block;width:10px;height:10px}',
 
       /* ── ModelSelect：自绘下拉（触发器 + 固定定位弹层） ───────────────── */
       /* `align-self:flex-start` + `flex:none` 是关键：父级是纵向 flex，
@@ -1530,34 +1636,38 @@ window.__ModuleLoader__.load({
          高度塌成 0，只剩一条搜索框的缝。 */
       '.mds{position:relative;display:flex;flex-direction:column;gap:3px;min-width:0;max-width:100%;height:auto;align-self:flex-start;flex:none}',
       '.mds-label{font-size:12px;line-height:16px;color:var(--dsw-alias-label-secondary)}',
-      '.mds-trigger{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:30px;min-width:0;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer;transition:background-color .12s,border-color .12s,box-shadow .12s}',
+      '.mds-trigger{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:30px;min-width:0;padding:0 10px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer;transition:background-color .12s,border-color .12s,box-shadow .12s}',
       '.mds-trigger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}',
-      '.mds-trigger[aria-expanded="true"]{border-color:var(--dsw-alias-brand-primary)}',
-      '.mds-trigger:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 2px var(--dsw-alias-interactive-bg-hover)}',
+      '.mds-trigger[aria-expanded="true"],.mds-trigger[aria-expanded="true"]:hover:not(:disabled){border-color:var(--dsw-alias-border-l3);background:var(--dsw-alias-bg-layer-1)}',
+      /* 触发器自带醒目边框，焦点环用 box-shadow 叠在外侧而不是 outline ——
+         之前这里填的是 interactive-bg-hover（#2631480f），等于没有焦点提示。 */
+      '.mds-trigger:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))}',
       '.mds-trigger:disabled{opacity:.45;cursor:not-allowed}',
       '.mds-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.mds-valuePlaceholder{color:var(--dsw-alias-label-tertiary)}',
       '.mds-chevron{flex:none;width:12px;height:12px;color:var(--dsw-alias-label-tertiary);transition:transform .12s}',
       '.mds-chevronOpen{transform:rotate(180deg)}',
-      '.mds-panel{box-sizing:border-box;position:fixed;z-index:60;display:flex;flex-direction:column;overflow:hidden;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);box-shadow:0 8px 24px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary);font-size:13px;line-height:18px}',
-      '.mds-searchWrap{position:sticky;top:0;z-index:1;flex:none;padding:2px 2px 6px;background:var(--dsw-alias-bg-layer-3)}',
-      '.mds-search{box-sizing:border-box;width:100%;height:28px;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}',
+      /* 弹层用宿主的菜单面（半透明 + 背景模糊）：它悬在面板之上，
+         再叠一层不透明 layer-3 会和底下的面板糊成一片、看不出层级。 */
+      '.mds-panel{box-sizing:border-box;position:fixed;z-index:60;display:flex;flex-direction:column;overflow:hidden;padding:4px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-3));-webkit-backdrop-filter:var(--dsw-menu-backdrop-filter);backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);font-size:13px;line-height:18px}',
+      '.mds-searchWrap{position:sticky;top:0;z-index:1;flex:none;padding:2px 2px 6px}',
+      '.mds-search{box-sizing:border-box;width:100%;height:28px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px}',
       '.mds-search::placeholder{color:var(--dsw-alias-label-tertiary)}',
-      '.mds-search:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary)}',
+      '.mds-search:focus-visible{outline:none;border-color:var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary))}',
       '.mds-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-height:0;padding-bottom:2px;flex:1 1 auto}',
       /* 搜索框常驻后「别把列表挤没」靠这两条：搜索框 flex:none（固定约 34px），列表可收缩可滚动。
          绝不要给 .mds-panel 加 `contain:size`：那会让弹层高度塌成 0，只剩搜索框一条缝。 */
       '.mds-groupTitle{padding:8px 6px 4px;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary)}',
-      '.mds-option{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;height:30px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}',
+      '.mds-option{box-sizing:border-box;display:flex;align-items:center;gap:6px;width:100%;height:30px;padding:0 6px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:18px;text-align:left;cursor:pointer}',
       '.mds-option:hover,.mds-optionActive{background:var(--dsw-alias-interactive-bg-hover)}',
-      '.mds-optionSelected{color:var(--dsw-alias-brand-primary)}',
-      '.mds-option:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
-      '.mds-check{flex:none;width:12px;height:12px}',
+      '.mds-optionSelected{color:var(--dsw-alias-label-primary);font-weight:500}',
+      '.mds-option:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}',
+      '.mds-check{flex:none;width:12px;height:12px;color:var(--dsw-alias-state-business-primary)}',
       '.mds-checkSpacer{flex:none;width:12px;height:12px}',
       /* 标签：占满剩余宽度并截断；右侧 id 后缀按内容走，给标签至少留 40%。
          以前后缀卡死 46% 上限，`cpa-workbuddy` 会被截成 `cpa-workbu…`。 */
       '\.mds-optionLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '\.mds-optionHint{flex:0 0 auto;min-width:0;max-width:60%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '\.mds-optionHint{flex:0 0 auto;min-width:0;max-width:60%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:16px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.mds-empty{padding:10px 8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
     ].join('');
 
@@ -1782,16 +1892,18 @@ window.__ModuleLoader__.load({
         setProbeResult({});
       }
 
-      /** 规则试算结果的一行文字 + 颜色类；null = 还没试算过。 */
+      /** 规则试算结果的一行文字 + 状态类；null = 还没试算过。
+       *  tone 只决定左侧图标，文字颜色由 CSS 决定（成句的话用中性字色）。 */
       function probeLine(index) {
         const result = probeResult[index];
         if (result === undefined) return null;
         if (result.kind === 'loading') {
-          return { className: 'cm-probeResult cm-probeNone', text: '试算中…' };
+          return { className: 'cm-probeResult cm-probeNone', tone: 'none', text: '试算中…' };
         }
         if (result.kind === 'unavailable') {
           return {
             className: 'cm-probeResult cm-probeWait',
+            tone: 'warn',
             text:
               '试算接口还没上线（HTTP ' +
               String(result.status) +
@@ -1799,17 +1911,19 @@ window.__ModuleLoader__.load({
           };
         }
         if (result.kind === 'error') {
-          return { className: 'cm-probeResult cm-probeErr', text: '试算失败：' + result.text };
+          return { className: 'cm-probeResult cm-probeErr', tone: 'err', text: '试算失败：' + result.text };
         }
         if (result.kind === 'none') {
           return {
             className: 'cm-probeResult cm-probeNone',
+            tone: 'none',
             text: '不命中任何规则，将继承主 Agent',
           };
         }
         const effort = textOf(result.route.reasoningEffort);
         return {
           className: 'cm-probeResult cm-probeHit',
+          tone: 'ok',
           text:
             '命中：' +
             hitLabel({ hit: result.hit }) +
@@ -2158,7 +2272,18 @@ window.__ModuleLoader__.load({
           /* 没有结果就不占位；失败也只是加一行，不动上面已有的规则内容。 */
           line === null
             ? null
-            : h('p', { className: line.className, role: 'status' }, line.text),
+            : h(
+                'p',
+                { className: line.className, role: 'status' },
+                line.tone === 'ok'
+                  ? okGlyph()
+                  : line.tone === 'warn'
+                    ? warnGlyph()
+                    : line.tone === 'err'
+                      ? errGlyph()
+                      : null,
+                h('span', null, line.text),
+              ),
         );
       });
 
@@ -2269,7 +2394,8 @@ window.__ModuleLoader__.load({
             ? h(
                 'div',
                 { className: 'cm-warn' },
-                '没有可用的模型路由（LLM 服务未就绪）；已保存的值仍会原样显示。',
+                warnGlyph(),
+                h('span', null, '没有可用的模型路由（LLM 服务未就绪）；已保存的值仍会原样显示。'),
               )
             : null,
           h(
@@ -2384,7 +2510,8 @@ window.__ModuleLoader__.load({
             : h(
                 'span',
                 { className: feedback.kind === 'ok' ? 'cm-ok' : 'cm-err', role: 'status' },
-                feedback.text,
+                feedback.kind === 'ok' ? okGlyph() : errGlyph(),
+                h('span', null, feedback.text),
               ),
         ),
 
@@ -2421,6 +2548,9 @@ window.__ModuleLoader__.load({
               role: 'status',
               'aria-live': item.kind === 'error' ? 'assertive' : 'polite',
             },
+            item.kind === 'error'
+              ? errGlyph('cmt-icon')
+              : okGlyph('cmt-icon'),
             h('span', { className: 'cmt-text' }, item.text),
             h(
               'button',
@@ -2431,7 +2561,7 @@ window.__ModuleLoader__.load({
                 title: '关闭',
                 onClick: () => dismissToast(item.id),
               },
-              '×',
+              closeIcon('cmt-closeIcon'),
             ),
           ),
         ),
@@ -3298,7 +3428,7 @@ window.__ModuleLoader__.load({
                   setErrorsHiddenAt(newest.time);
                 },
               },
-              '×',
+              closeIcon(),
             ),
           ),
         ];
@@ -3915,7 +4045,12 @@ window.__ModuleLoader__.load({
         body = h(
           'div',
           null,
-          h('p', { className: 'cmp-notice cmp-noticeErr' }, loadError),
+          h(
+            'p',
+            { className: 'cmp-notice cmp-noticeErr' },
+            errGlyph(),
+            h('span', null, loadError),
+          ),
           h(
             'div',
             { className: 'cmp-actions' },
