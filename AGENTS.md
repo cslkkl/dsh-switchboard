@@ -53,7 +53,7 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 
 - [ ] 拆 `client.js`（4103 行，单文件零构建）需引入构建链，与「浏览器直接加载单文件」契约冲突，待决。
 - [ ] L3 工具链（ESLint / Prettier / pre-commit / CI）尚未接入；当前零依赖无 lint 配置。
-- [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库）。
+- [ ] 链接校验需排除 `*research*`（外部包 README 原文，链接指向它们自己的仓库；该目录已排除出版本库，本机仍保留）。
 - [ ] 链接校验脚本待固化：目前靠一次性临时脚本（校验相对路径 + 手写 `#anchor` 对标题 slug），未进 `tools/`。固化成 `tools/check-links.mjs` 要连带更新 [tools/README.md](tools/README.md) 与上方「常用命令」（[tools/AGENTS.md](tools/AGENTS.md) 的硬要求），是独立一条工作。
 
 ## 活跃坑
@@ -74,4 +74,4 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 - 架构与契约 → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 脚本手册 → [tools/README.md](tools/README.md)
 - 决策与依据 → [.agents/notes/](.agents/notes/)
-- 外部 API 调研（非活文档、外部包 README 原文）→ [.agents/notes/research/](.agents/notes/research/)
+- 外部 API 调研（非活文档、外部包 README 原文）→ 本机 `.agents/notes/research/`，已排除出版本库

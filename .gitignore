@@ -6,6 +6,10 @@ node_modules/
 .probe/
 *.probe.jsonl
 
+# 外部包 README 原文转储：他人项目的文档，不随本仓库公开。
+# 文件保留在本机，仅供查阅；仓库里只放自己的决策与依据记录。
+.agents/notes/research/
+
 # 编辑器 / 系统
 .DS_Store
 Thumbs.db
