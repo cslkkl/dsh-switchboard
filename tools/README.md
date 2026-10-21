@@ -58,6 +58,22 @@
 - 典型用途：跨平台协作或批量改动后确认没有混进 CRLF。
 - 依赖：仅标准库。被依赖：CI（`.github/workflows/check.yml`）。
 
+## check-repo-eol.py
+
+- 作用：换行守卫。查**仓库 blob** 与**工作区副本**两处是否都是 LF。
+- 用法：
+  - `python tools/check-repo-eol.py` —— 查，有问题则报出修复命令。
+  - `python tools/check-repo-eol.py --fix` —— 把工作区副本转成 LF（**写操作**，唯一例外）。
+  - `python tools/check-repo-eol.py --ci` —— CI 模式，只报不改。
+- 为什么单独一个：`.gitattributes` 写的是 `* text=auto eol=lf`，仓库里存的必须是 LF，
+  检出一律按 LF 写出。`check-line-endings.py` 只查工作区文件**是否一致**，
+  查不出「仓库存的是 CRLF」和「工作区副本与仓库不一致」这两种情况。
+  后者症状很隐蔽：`git status` 报 M 但 `git diff` 是空的（内容一样，只有换行符不同）。
+- 判定方式：直接读 git 对象的原始字节，**不走文本管道** ——
+  PowerShell 的 `| Out-String` 之类会做换行转换，测出来的结果是假的。
+- 退出码：0 = 干净；1 = 有问题。
+- 依赖：仅标准库。被依赖：CI（`.github/workflows/check.yml`）。
+
 ## 文档网络的出口
 
 - 规则层 → [AGENTS.md](AGENTS.md)

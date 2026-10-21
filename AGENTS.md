@@ -23,6 +23,9 @@ dsh plugin --profile web add "<本目录>"     # 安装（link: 形式）
 - 样式自检：`node tools/check-css-usage.mjs`（死规则 / 未定义类，见 [tools/README.md](tools/README.md)）。
 - 文档校验：`python tools/check-markdown-links.py . --fragments --refs --github --exclude '*research*'` 与
   `python tools/check-line-endings.py . --exclude '*research*' --ext .js --ext .md --ext .mjs --ext .json --ext .yml --ext .py`。
+- 换行守卫：`python tools/check-repo-eol.py`（查仓库 blob 与工作区副本是否都是 LF），
+  `python tools/check-repo-eol.py --fix` 把工作区副本转回 LF。**在 PowerShell 里改完文件必跑** ——
+  `WriteAllLines` / `Set-Content` 写的是 CRLF，会让 `git status` 报 M 而 `git diff` 是空的。
 - 检查选择：文档改动 → 链接校验 + 换行校验；代码改动 → `node --check` + 对应接口自测；样式改动 → 外加 `check-css-usage`。
 - CI：`.github/workflows/check.yml` 每次推送与 PR 跑上面全部检查，命令与本节一致。
 

@@ -33,3 +33,8 @@ jobs:
 
       - name: 换行一致性
         run: python3 tools/check-line-endings.py . --exclude '*research*' --ext .js --ext .md --ext .mjs --ext .json --ext .yml --ext .py
+
+      - name: 换行守卫（仓库 blob 与工作区副本都是 LF）
+        # .gitattributes 写的是 eol=lf：仓库存的必须是 LF，检出一律按 LF 写出。
+        # 这一项查的是 check-line-endings.py 查不到的那半边。
+        run: python3 tools/check-repo-eol.py --ci
