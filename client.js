@@ -1542,7 +1542,6 @@ window.__ModuleLoader__.load({
       '.cmp-close:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}',
       '.cmp-closeIcon{display:block;width:14px;height:14px}',
       '.cmp-body{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:8px 10px 10px}',
-      '.cmp-hint{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
       /* 警告与成功提示是成句的话：字色用中性色，语义色只给前面的图标。
          图标复用卡片那套 `.cm-stateIcon`（同一组 helper、同一条规则），
          这里只覆盖它在面板语境下的取色，不另立一个 `cmp-` 前缀。 */
@@ -1573,6 +1572,9 @@ window.__ModuleLoader__.load({
          `DeepSeek-V4.1-Flash` 和「自动（由适配器挑）」都会被截断。
          第三个（档位）独占一整行，避免右下角留一个空格子。 */
       '.cmp-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-width:0}',
+      /* 字段包了标签层，宽度要交给后代 .mds；最后一个字段跨整行。 */
+      '.cmp-fields > .cmp-labeledField > .mds{width:100%;min-width:0;align-self:stretch}',
+      '.cmp-fields > .cmp-labeledField:last-child{grid-column:1/-1}',
       '.cmp-fields > .mds{width:100%;min-width:0;align-self:stretch}',
       '.cmp-fields > .mds:last-child{grid-column:1/-1}',
       '.cmp-input{box-sizing:border-box;height:30px;min-width:0;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px}',
@@ -1615,12 +1617,13 @@ window.__ModuleLoader__.load({
       '.cmp-guide{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
 
       /* ── 批量：把本会话全部成员换成同一个模型 ─────────────────────────── */
-      '.cmp-bulk{display:flex;flex-direction:column;gap:8px;padding:8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
       /* 批量条分两行两列：第一行渠道 / 模型，第二行档位 / 按钮。
          三个控件挤一行时，460px 的面板里每档只剩约 130px，`deepseek-v4.1-flash`
          和「自动（由适配器挑）」都会被截断，标签也放不下。 */
       '.cmp-bulkRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:end;min-width:0}',
-      '.cmp-bulkRow > .mds{width:100%;min-width:0;align-self:stretch}',
+      /* 字段现在带可见标签，包在 .cmp-labeledField 里，
+         所以宽度要交给**后代**的 .mds —— 直接子元素不再是 .mds 了。 */
+      '.cmp-labeledField > .mds{width:100%;min-width:0;align-self:stretch}',
       '.cmp-bulkActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;align-self:end}',
       '.cmp-bulkActions > *{flex:none}',
       '.cmp-bulkResult{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
@@ -1638,11 +1641,24 @@ window.__ModuleLoader__.load({
       '.cmp-errorItem{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}',
       '.cmp-errorTime{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}',
       '.cmp-errorBarBtn{flex:none;height:22px;padding:0 8px;font-size:12px;line-height:20px}',
-      /* 「本对话默认」块：标题行（标签 + 说明）+ 一个下拉，和批量条同一层级。 */
-      '.cmp-sessionBlock{display:flex;flex-direction:column;gap:6px;min-width:0}',
-      '.cmp-sessionHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}',
-      '.cmp-sessionLabel{font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}',
-      '.cmp-sessionBlock .mds{width:100%;min-width:0;align-self:stretch}',
+      /* ── 分区标题：面板里塞了「本对话默认 / 批量设置 / 成员列表」三块不同性质的操作，
+         没有标题就分不清哪个下拉是干什么的、按钮作用于谁。 ─────────────────────── */
+      '.cmp-section{display:flex;flex-direction:column;gap:6px;min-width:0}',
+      '.cmp-sectionHead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}',
+      '.cmp-sectionTitle{font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary)}',
+      '.cmp-sectionNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+      /* 分区之间的分隔线：用留白 + 细线分组，不用卡片套卡片。 */
+      '.cmp-section + .cmp-section{padding-top:10px;border-top:.5px solid var(--dsw-alias-border-l1)}',
+
+      /* 面板顶部：标题 + 一句说明。说明是「怎么用」的操作指引，
+         不是脚注 —— 12px 灰字会被读成补充说明，实际是这段的入口。 */
+      '.cmp-headText{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0}',
+      '.cmp-subtitle{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+
+      /* 下拉的可见标签：裸下拉框看不出是渠道、模型还是档位。 */
+      '.cmp-fieldLabel{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+      '.cmp-labeledField{display:flex;flex-direction:column;gap:4px;min-width:0}',
+
 
       /* ── 点名表管理（面板最底部的折叠块） ─────────────────────────────── */
       '.cmp-pins{display:flex;flex-direction:column;gap:8px;padding:8px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);min-width:0}',
@@ -3513,49 +3529,73 @@ window.__ModuleLoader__.load({
         const bulkEfforts = bulkModel === null ? [] : bulkModel.efforts;
         return h(
           'div',
-          { className: 'cmp-bulk' },
+          { className: 'cmp-section' },
+          /* 分区标题说清这块是干什么的：选一个模型，套到本对话所有成员上。 */
+          h(
+            'div',
+            { className: 'cmp-sectionHead' },
+            h('span', { className: 'cmp-sectionTitle' }, '批量设置'),
+            h('span', { className: 'cmp-sectionNote' }, '给本对话的所有成员换一个模型'),
+          ),
           /* 2×2 网格：渠道 / 模型 一行，档位 / 按钮 一行。档位和路由必须一起选，见 AGENTS.md。 */
           h(
             'div',
             { className: 'cmp-bulkRow' },
-            h(ModelSelect, {
-              value: bulk.provider,
-              options: providerChoiceList(routes),
-              placeholder: '渠道',
-              emptyHint: '没有可用的渠道（LLM 服务未就绪）',
-              ariaLabel: '批量的 provider',
-              testId: 'provider-select',
-              disabled: bulkBusy,
-              onChange: (value) => {
-                const models = modelsOf(routes, value);
-                patchBulk({
-                  provider: value,
-                  model: models.length > 0 ? models[0].id : '',
-                  effort: '',
-                });
-              },
-            }),
-            h(ModelSelect, {
-              value: bulk.model,
-              groups: modelChoiceGroups(routes, bulk.provider),
-              placeholder: '模型',
-              emptyHint: bulk.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
-              ariaLabel: '批量的 model',
-              testId: 'model-select',
-              disabled: bulkBusy,
-              onChange: (value) => patchBulk({ model: value, effort: '' }),
-            }),
-            h(ModelSelect, {
-              /* 哨兵折算同规则行：ModelSelect 丢空串选项，「自动」落盘必须是空串。 */
-              value: effortSelectValue(bulk.effort),
-              options: effortChoices(bulkEfforts, bulkModel === null ? '' : bulkModel.defaultEffort),
-              placeholder: '档位（自动）',
-              emptyHint: bulkEfforts.length === 0 ? '该模型不声明档位' : '没有可选项',
-              ariaLabel: '批量的推理档位',
-              testId: 'effort-select',
-              disabled: bulkBusy || bulkEfforts.length === 0,
-              onChange: (value) => patchBulk({ effort: effortFromSelect(value) }),
-            }),
+            /* 三个下拉各自带可见标签：光看「DeepSeek / DeepSeek-V4.1-Flash / 自动」
+               分不出哪个是渠道、哪个是模型、哪个是档位。 */
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '渠道'),
+              h(ModelSelect, {
+                value: bulk.provider,
+                options: providerChoiceList(routes),
+                placeholder: '选渠道',
+                emptyHint: '没有可用的渠道（LLM 服务未就绪）',
+                ariaLabel: '批量的 provider',
+                testId: 'provider-select',
+                disabled: bulkBusy,
+                onChange: (value) => {
+                  const models = modelsOf(routes, value);
+                  patchBulk({
+                    provider: value,
+                    model: models.length > 0 ? models[0].id : '',
+                    effort: '',
+                  });
+                },
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '模型'),
+              h(ModelSelect, {
+                value: bulk.model,
+                groups: modelChoiceGroups(routes, bulk.provider),
+                placeholder: '选模型',
+                emptyHint: bulk.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
+                ariaLabel: '批量的 model',
+                testId: 'model-select',
+                disabled: bulkBusy,
+                onChange: (value) => patchBulk({ model: value, effort: '' }),
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '推理档位'),
+              h(ModelSelect, {
+                /* 哨兵折算同规则行：ModelSelect 丢空串选项，「自动」落盘必须是空串。 */
+                value: effortSelectValue(bulk.effort),
+                options: effortChoices(bulkEfforts, bulkModel === null ? '' : bulkModel.defaultEffort),
+                placeholder: '自动（由适配器挑）',
+                emptyHint: bulkEfforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+                ariaLabel: '批量的推理档位',
+                testId: 'effort-select',
+                disabled: bulkBusy || bulkEfforts.length === 0,
+                onChange: (value) => patchBulk({ effort: effortFromSelect(value) }),
+              }),
+            ),
             h(
               'div',
               { className: 'cmp-bulkActions' },
@@ -3563,7 +3603,7 @@ window.__ModuleLoader__.load({
                 'button',
                 {
                   type: 'button',
-                  className: 'cmp-btn cmp-btnPrimary',
+                  className: 'cmp-btn',
                   disabled: !canApply,
                   onClick: () => {
                     const picked = bulkRoute();
@@ -3731,46 +3771,62 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'cmp-fields', key: 'route' },
-            h(ModelSelect, {
-              value: form.provider,
-              options: providerChoiceList(routes),
-              placeholder: '渠道',
-              emptyHint: '没有可用的渠道（LLM 服务未就绪）',
-              ariaLabel: '新成员的 provider',
-              testId: 'provider-select',
-              disabled: creating,
-              onChange: (value) => {
-                const models = modelsOf(routes, value);
-                patchForm({
-                  provider: value,
-                  model: models.length > 0 ? models[0].id : '',
-                  effort: '',
-                });
-              },
-            }),
-            h(ModelSelect, {
-              value: form.model,
-              groups: modelChoiceGroups(routes, form.provider),
-              placeholder: '模型',
-              emptyHint: form.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
-              ariaLabel: '新成员的 model',
-              testId: 'model-select',
-              disabled: creating,
-              onChange: (value) => patchForm({ model: value, effort: '' }),
-            }),
-            h(ModelSelect, {
-              value: effortSelectValue(form.effort),
-              options: effortChoices(
-                formModel === null ? [] : formModel.efforts,
-                formModel === null ? '' : formModel.defaultEffort,
-              ),
-              placeholder: '档位（自动）',
-              emptyHint: formModel === null || formModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
-              ariaLabel: '新成员的推理档位',
-              testId: 'effort-select',
-              disabled: creating || formModel === null || formModel.efforts.length === 0,
-              onChange: (value) => patchForm({ effort: effortFromSelect(value) }),
-            }),
+            /* 三档各带可见标签，与批量条一致：光看三个并排的下拉分不出谁是谁。 */
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '渠道'),
+              h(ModelSelect, {
+                value: form.provider,
+                options: providerChoiceList(routes),
+                placeholder: '选渠道',
+                emptyHint: '没有可用的渠道（LLM 服务未就绪）',
+                ariaLabel: '新成员的 provider',
+                testId: 'provider-select',
+                disabled: creating,
+                onChange: (value) => {
+                  const models = modelsOf(routes, value);
+                  patchForm({
+                    provider: value,
+                    model: models.length > 0 ? models[0].id : '',
+                    effort: '',
+                  });
+                },
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '模型'),
+              h(ModelSelect, {
+                value: form.model,
+                groups: modelChoiceGroups(routes, form.provider),
+                placeholder: '选模型',
+                emptyHint: form.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
+                ariaLabel: '新成员的 model',
+                testId: 'model-select',
+                disabled: creating,
+                onChange: (value) => patchForm({ model: value, effort: '' }),
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '推理档位'),
+              h(ModelSelect, {
+                value: effortSelectValue(form.effort),
+                options: effortChoices(
+                  formModel === null ? [] : formModel.efforts,
+                  formModel === null ? '' : formModel.defaultEffort,
+                ),
+                placeholder: '自动（由适配器挑）',
+                emptyHint: formModel === null || formModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+                ariaLabel: '新成员的推理档位',
+                testId: 'effort-select',
+                disabled: creating || formModel === null || formModel.efforts.length === 0,
+                onChange: (value) => patchForm({ effort: effortFromSelect(value) }),
+              }),
+            ),
           ),
           formError === ''
             ? null
@@ -3994,47 +4050,63 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'cmp-fields' },
-            h(ModelSelect, {
-              value: draft.provider,
-              options: providerChoiceList(routes),
-              placeholder: '渠道',
-              emptyHint: '没有可用的渠道（LLM 服务未就绪）',
-              ariaLabel: '成员的 provider',
-              testId: 'provider-select',
-              disabled: busy === key,
-              onChange: (value) => {
-                const models = modelsOf(routes, value);
-                patchDraft({
-                  provider: value,
-                  model: models.length > 0 ? models[0].id : '',
-                  effort: '',
-                });
-              },
-            }),
-            h(ModelSelect, {
-              value: draft.model,
-              groups: modelChoiceGroups(routes, draft.provider),
-              placeholder: '模型',
-              emptyHint: draft.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
-              ariaLabel: '成员的 model',
-              testId: 'model-select',
-              disabled: busy === key,
-              onChange: (value) => patchDraft({ model: value, effort: '' }),
-            }),
-            h(ModelSelect, {
-              value: effortSelectValue(draft.effort),
-              options: effortChoices(
-                draftModel === null ? [] : draftModel.efforts,
-                draftModel === null ? '' : draftModel.defaultEffort,
-              ),
-              placeholder: '档位（自动）',
-              emptyHint:
-                draftModel === null || draftModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
-              ariaLabel: '推理档位',
-              testId: 'effort-select',
-              disabled: busy === key || draftModel === null || draftModel.efforts.length === 0,
-              onChange: (value) => patchDraft({ effort: effortFromSelect(value) }),
-            }),
+            /* 与批量条、新建表单一致：三个下拉各带可见标签。 */
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '渠道'),
+              h(ModelSelect, {
+                value: draft.provider,
+                options: providerChoiceList(routes),
+                placeholder: '选渠道',
+                emptyHint: '没有可用的渠道（LLM 服务未就绪）',
+                ariaLabel: '成员的 provider',
+                testId: 'provider-select',
+                disabled: busy === key,
+                onChange: (value) => {
+                  const models = modelsOf(routes, value);
+                  patchDraft({
+                    provider: value,
+                    model: models.length > 0 ? models[0].id : '',
+                    effort: '',
+                  });
+                },
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '模型'),
+              h(ModelSelect, {
+                value: draft.model,
+                groups: modelChoiceGroups(routes, draft.provider),
+                placeholder: '选模型',
+                emptyHint: draft.provider === '' ? '先选渠道' : '这个渠道下没有可用模型',
+                ariaLabel: '成员的 model',
+                testId: 'model-select',
+                disabled: busy === key,
+                onChange: (value) => patchDraft({ model: value, effort: '' }),
+              }),
+            ),
+            h(
+              'div',
+              { className: 'cmp-labeledField' },
+              h('span', { className: 'cmp-fieldLabel' }, '推理档位'),
+              h(ModelSelect, {
+                value: effortSelectValue(draft.effort),
+                options: effortChoices(
+                  draftModel === null ? [] : draftModel.efforts,
+                  draftModel === null ? '' : draftModel.defaultEffort,
+                ),
+                placeholder: '自动（由适配器挑）',
+                emptyHint:
+                  draftModel === null || draftModel.efforts.length === 0 ? '该模型不声明档位' : '没有可选项',
+                ariaLabel: '推理档位',
+                testId: 'effort-select',
+                disabled: busy === key || draftModel === null || draftModel.efforts.length === 0,
+                onChange: (value) => patchDraft({ effort: effortFromSelect(value) }),
+              }),
+            ),
           ),
           h(
             'div',
@@ -4150,7 +4222,23 @@ window.__ModuleLoader__.load({
           ),
         );
       } else {
-        body = h('div', { className: 'cmp-list' }, rows);
+        /* 成员列表单独成区，标题写清「有多少个」与「点一行就换」，
+           否则它和上面的批量设置挤在一起，看不出这两块是不同层级的操作。 */
+        body = h(
+          'div',
+          { className: 'cmp-section' },
+          h(
+            'div',
+            { className: 'cmp-sectionHead' },
+            h('span', { className: 'cmp-sectionTitle' }, '成员'),
+            h(
+              'span',
+              { className: 'cmp-sectionNote' },
+              `${members.length} 个，点一行就换`,
+            ),
+          ),
+          h('div', { className: 'cmp-list' }, rows),
+        );
       }
 
       const anchorStyle =
@@ -4205,7 +4293,18 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'cmp-head' },
-                h('span', { className: 'cmp-headTitle' }, '成员模型'),
+                h(
+                  'div',
+                  { className: 'cmp-headText' },
+                  h('span', { className: 'cmp-headTitle' }, '成员模型'),
+                  /* 这句是「怎么用」的操作指引，不是脚注。
+                     放在标题下面跟着标题走，比塞在正文第一行的 12px 灰字更容易被读到。 */
+                  h(
+                    'p',
+                    { className: 'cmp-subtitle' },
+                    '点成员即可换模型。正在跑的下一步就换，没在跑的等它下次被唤醒时换，都不用重启。',
+                  ),
+                ),
                 h(
                   'button',
                   {
@@ -4221,11 +4320,6 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'cmp-body' },
-                h(
-                  'p',
-                  { className: 'cmp-hint' },
-                  '点成员即可换模型：正在跑的下一步就换，没在跑的等它下次被唤醒时换——都不需要重启',
-                ),
                 notice === null
                   ? null
                   : h(
@@ -4250,31 +4344,36 @@ window.__ModuleLoader__.load({
                 phase === 'ready'
                   ? h(
                       'div',
-                      { className: 'cmp-sessionBlock' },
+                      { className: 'cmp-section' },
                       h(
                         'div',
-                        { className: 'cmp-sessionHead' },
-                        h('span', { className: 'cmp-sessionLabel' }, '本对话默认'),
+                        { className: 'cmp-sectionHead' },
+                        h('span', { className: 'cmp-sectionTitle' }, '本对话默认'),
                         h(
                           'span',
-                          { className: 'cmp-bulkNote' },
+                          { className: 'cmp-sectionNote' },
                           sessionDefault === null
                             ? '还没设，第一次派活会问你一次'
                             : '之后派活不再询问',
                         ),
                       ),
-                      h(ModelSelect, {
-                        value: sessionValue(),
-                        options: sessionOptions(),
-                        placeholder: '继承主 Agent',
-                        emptyHint: '没有可用的模型路由（LLM 服务未就绪）',
-                        ariaLabel: '本对话默认模型',
-                        testId: 'session-default-select',
-                        disabled: busy === 'session',
-                        onChange: (value) => {
-                          void chooseSessionDefault(value);
-                        },
-                      }),
+                      h(
+                        'div',
+                        { className: 'cmp-labeledField' },
+                        h('span', { className: 'cmp-fieldLabel' }, '模型'),
+                        h(ModelSelect, {
+                          value: sessionValue(),
+                          options: sessionOptions(),
+                          placeholder: '继承主 Agent',
+                          emptyHint: '没有可用的模型路由（LLM 服务未就绪）',
+                          ariaLabel: '本对话默认模型',
+                          testId: 'session-default-select',
+                          disabled: busy === 'session',
+                          onChange: (value) => {
+                            void chooseSessionDefault(value);
+                          },
+                        }),
+                      ),
                     )
                   : null,
                 // 批量条常驻：一眼可见，不折叠。数据没读出来时先不画（没有 routes 无可选）。
